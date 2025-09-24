@@ -86,6 +86,25 @@ export const authAPI = {
   }
 }
 
+// Translation API (stubbed schema)
+export interface TranslateSubtitleItemRequest {
+  text: string
+  sourceLang: string
+  targetLang: string
+}
+
+export interface TranslateSubtitleItemResponse {
+  translatedText: string
+}
+
+export const translationAPI = {
+  translateText: async (payload: TranslateSubtitleItemRequest): Promise<TranslateSubtitleItemResponse> => {
+    // Endpoint giả định; thay bằng endpoint thật của bạn
+    const response = await apiClient.post<TranslateSubtitleItemResponse>('/translate/text', payload)
+    return response.data
+  }
+}
+
 // Token management
 export const tokenManager = {
   getAccessToken: (): string | null => {
