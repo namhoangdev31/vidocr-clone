@@ -1,8 +1,13 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-import * as FFmpegWasm from '@ffmpeg/ffmpeg'
+import { useState, useRef, useCallback, useEffect } from 'react'
+// ffmpeg-related features have moved to ProgressDetailPage
 import { translationAPI } from '@/app/lib/api'
+import { useFileUpload } from '@/app/hooks/useFileUpload'
+import { useJobManagement } from '@/app/hooks/useJobManagement'
+import { useWebSocket } from '@/app/hooks/useWebSocket'
+import { videoTranslationService, CreateJobRequest } from '@/app/lib/api/videoTranslationService'
+import { SUPPORTED_LANGUAGES, AI_MODELS, ERROR_CODES } from '@/app/lib/config/environment'
 
 type SubtitleCue = {
   id: string
@@ -103,8 +108,6 @@ const cuesToVtt = (cues: SubtitleCue[]) => {
 export default function CreatePage() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [isUploading, setIsUploading] = useState(false)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -112,26 +115,16 @@ export default function CreatePage() {
   const [durationMs, setDurationMs] = useState(0)
   const timelineRef = useRef<HTMLDivElement>(null)
   const [dragState, setDragState] = useState<null | { type: 'start' | 'end'; index: number; startClientX: number; startMsSnapshot: number; endMsSnapshot: number; pxPerMs: number }>(null)
-  const [isExporting, setIsExporting] = useState(false)
-  type FFmpegInstance = any
-  const ffmpegRef = useRef<FFmpegInstance | null>(null)
-
-  const getOrCreateFfmpeg = async () => {
-    if (ffmpegRef.current) return ffmpegRef.current
-    const ffmpeg = (FFmpegWasm as any).createFFmpeg({ log: false })
-    await ffmpeg.load()
-    ffmpegRef.current = ffmpeg
-    return ffmpeg
-  }
+  // export functionality moved to ProgressDetailPage
 
   // UI states
   const [autoDetect, setAutoDetect] = useState(false)
   const [showSourceDropdown, setShowSourceDropdown] = useState(false)
   const [showTargetDropdown, setShowTargetDropdown] = useState(false)
   const [showModelDropdown, setShowModelDropdown] = useState(false)
-  const [sourceLang, setSourceLang] = useState('Chinese')
-  const [targetLang, setTargetLang] = useState('Vietnamese')
-  const [selectedModel, setSelectedModel] = useState('ChatGPT 4.1 Giá Rẻ (1 ký tự trên dưới 1 token)')
+  const [sourceLang, setSourceLang] = useState('zh')
+  const [targetLang, setTargetLang] = useState('vi')
+  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
   const [translationMethod, setTranslationMethod] = useState<'soft' | 'hard' | 'text' | 'dubbing' | 'dubbingV2'>('soft')
   const [removeOriginalText, setRemoveOriginalText] = useState(false)
   const [removeBackgroundMusic, setRemoveBackgroundMusic] = useState(false)
@@ -140,36 +133,73 @@ export default function CreatePage() {
   const [brightness, setBrightness] = useState(160)
   const [contrast, setContrast] = useState(5)
 
+  // API integration
+  const { uploadFile, isUploading, uploadProgress, error: uploadError, reset: resetUpload } = useFileUpload({
+    onProgress: (progress) => {
+      console.log('Upload progress:', progress)
+    },
+    onSuccess: (fileKey) => {
+      console.log('Upload successful:', fileKey)
+    },
+    onError: (error) => {
+      console.error('Upload error:', error)
+    }
+  })
+
+  const { createJob, currentJob, isLoading: isCreatingJob, error: jobError } = useJobManagement({
+    autoRefresh: false
+  })
+
+  const { isConnected: isWebSocketConnected } = useWebSocket()
+
+  // Dropdown helpers to tránh mở chồng lấn
+  const closeAllDropdowns = () => {
+    setShowSourceDropdown(false)
+    setShowTargetDropdown(false)
+    setShowModelDropdown(false)
+  }
+
+  const toggleSourceDropdown = () => {
+    setShowSourceDropdown((prev) => {
+      const next = !prev
+      if (next) {
+        setShowTargetDropdown(false)
+        setShowModelDropdown(false)
+      }
+      return next
+    })
+  }
+
+  const toggleTargetDropdown = () => {
+    setShowTargetDropdown((prev) => {
+      const next = !prev
+      if (next) {
+        setShowSourceDropdown(false)
+        setShowModelDropdown(false)
+      }
+      return next
+    })
+  }
+
+  const toggleModelDropdown = () => {
+    setShowModelDropdown((prev) => {
+      const next = !prev
+      if (next) {
+        setShowSourceDropdown(false)
+        setShowTargetDropdown(false)
+      }
+      return next
+    })
+  }
+
   // Subtitles state (source and target tracks)
   const [sourceSubtitles, setSourceSubtitles] = useState<SubtitleCue[]>([])
   const [targetSubtitles, setTargetSubtitles] = useState<SubtitleCue[]>([])
   const subtitleFileInputRef = useRef<HTMLInputElement>(null)
 
-  const availableLanguages = ['Chinese', 'English', 'Korean', 'Japanese', 'Vietnamese', 'Spanish', 'French']
-  const availableModels = [
-    'ChatGPT 4.1 Giá Rẻ (1 ký tự trên dưới 1 token)',
-    'ChatGPT 4o Giá Rẻ (1 ký tự trên dưới 1 token)',
-    'ChatGPT 5 Giá Rẻ (1 ký tự trên dưới 1 token)',
-    'ChatGPT 4 Giá Rẻ (1 ký tự trên dưới 8 token)',
-    'Dịch Theo Ngữ Cảnh Dài (1 ký tự dịch bằng 20 token)',
-    'ChatGPT o1 Mini (1 ký tự trên dưới 8 token)',
-    'ChatGPT o3 Mini (1 ký tự trên dưới 6 token)',
-    'ChatGPT 4o (1 ký tự trên dưới 12 token)',
-    'ChatGPT 4.1 (1 ký tự trên dưới 12 token)',
-    'ChatGPT 5 (1 ký tự trên dưới 12 token)'
-  ]
-
-  // Supported video formats
-  const supportedFormats = [
-    'video/mp4',
-    'video/avi',
-    'video/mov',
-    'video/wmv',
-    'video/flv',
-    'video/webm',
-    'video/mkv',
-    'video/m4v'
-  ]
+  // Get language and model options from config
+  const availableLanguages = SUPPORTED_LANGUAGES
+  const availableModels = AI_MODELS
 
   // Format file size for display
   const formatFileSize = (bytes: number) => {
@@ -180,47 +210,25 @@ export default function CreatePage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  // Handle file validation
-  const validateFile = (file: File) => {
-    if (!supportedFormats.includes(file.type)) {
-      alert('Định dạng file không được hỗ trợ. Vui lòng chọn file video hợp lệ.')
-      return false
-    }
-
-    // Check file size (max 500MB)
-    const maxSize = 500 * 1024 * 1024 // 500MB
-    if (file.size > maxSize) {
-      alert('Kích thước file quá lớn. Vui lòng chọn file nhỏ hơn 500MB.')
-      return false
-    }
-
-    return true
-  }
-
-  // Simulate upload progress
-  const simulateUpload = async (file: File) => {
-    setIsUploading(true)
-    setUploadProgress(0)
-
-    // Create video preview URL
-    const previewUrl = URL.createObjectURL(file)
-    setVideoPreview(previewUrl)
-
-    // Simulate upload progress
-    for (let i = 0; i <= 100; i += 10) {
-      setUploadProgress(i)
-      await new Promise(resolve => setTimeout(resolve, 200))
-    }
-
-    setIsUploading(false)
-  }
-
-  // Handle file upload
+  // Handle file upload with API integration
   const handleFileUpload = async (file: File) => {
-    if (!validateFile(file)) return
+    try {
+      setUploadedFile(file)
+      
+      // Create video preview URL
+      const previewUrl = URL.createObjectURL(file)
+      setVideoPreview(previewUrl)
 
-    setUploadedFile(file)
-    await simulateUpload(file)
+      // Upload file using API
+      const fileKey = await uploadFile(file)
+      console.log('File uploaded successfully:', fileKey)
+      
+    } catch (error) {
+      console.error('Upload failed:', error)
+      // Reset state on error
+      setUploadedFile(null)
+      setVideoPreview(null)
+    }
   }
 
   // Handle drag events
@@ -341,14 +349,60 @@ export default function CreatePage() {
     setSourceSubtitles(cues)
   }
 
-  // Start translation (stub)
-  const startTranslation = () => {
+  // Start translation with API integration
+  const startTranslation = async () => {
     if (!uploadedFile) {
       alert('Vui lòng chọn video trước khi bắt đầu dịch')
       return
     }
-    // Placeholder: thực hiện gọi API ở đây
-    alert(`Bắt đầu dịch: \n- Source: ${sourceLang}${autoDetect ? ' (auto-detect)' : ''}\n- Target: ${targetLang}\n- Model: ${selectedModel}\n- Method: ${translationMethod}\n- Options: removeOriginalText=${removeOriginalText}, removeBackgroundMusic=${removeBackgroundMusic}, mergeCaptions=${mergeCaptions}, mergeOpenCaptions=${mergeOpenCaptions}\n- Brightness: ${brightness}\n- Contrast: ${contrast}`)
+
+    try {
+      // First upload the file if not already uploaded
+      let fileKey: string
+      if (!currentJob) {
+        fileKey = await uploadFile(uploadedFile)
+      } else {
+        // File already uploaded, get the key from current job or use a placeholder
+        fileKey = 'inputs/' + uploadedFile.name // This should be the actual key from upload
+      }
+
+      // Find selected model details
+      const modelDetails = availableModels.find(m => m.id === selectedModel)
+      if (!modelDetails) {
+        throw new Error('Selected model not found')
+      }
+
+      // Prepare job data
+      const jobData: CreateJobRequest = {
+        fileKey,
+        sourceLang: autoDetect ? 'auto' : sourceLang,
+        targetLang,
+        burnSub: translationMethod === 'hard',
+        subtitleFormat: translationMethod === 'soft' ? 'srt' : 'ass',
+        voiceover: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
+        voiceProfile: translationMethod === 'dubbing' || translationMethod === 'dubbingV2' ? 'default' : undefined,
+        model: selectedModel,
+        aiProvider: modelDetails.provider as 'openai' | 'anthropic',
+        advanced: {
+          removeOriginalText,
+          removeBgm: removeBackgroundMusic,
+          mergeCaption: mergeCaptions,
+          mergeOpenCaption: mergeOpenCaptions
+        }
+      }
+
+      // Create translation job
+      const job = await createJob(jobData)
+      console.log('Translation job created:', job)
+      
+      // Show success message
+      alert(`Bắt đầu dịch thành công!\nJob ID: ${job.id}\nTrạng thái: ${job.status}`)
+      
+    } catch (error) {
+      console.error('Failed to start translation:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Có lỗi xảy ra khi bắt đầu dịch'
+      alert(`Lỗi: ${errorMessage}`)
+    }
   }
 
   const translateSubtitles = async () => {
@@ -358,7 +412,7 @@ export default function CreatePage() {
       return
     }
     try {
-      setIsUploading(true)
+      // Note: isUploading is managed by useFileUpload hook, not local state
       const results: SubtitleCue[] = []
       for (const c of src) {
         const res = await translationAPI.translateText({
@@ -373,8 +427,6 @@ export default function CreatePage() {
     } catch (e) {
       console.error(e)
       alert('Gọi API dịch thất bại')
-    } finally {
-      setIsUploading(false)
     }
   }
 
@@ -382,53 +434,14 @@ export default function CreatePage() {
   const removeFile = () => {
     setUploadedFile(null)
     setVideoPreview(null)
-    setUploadProgress(0)
-    setIsUploading(false)
+    resetUpload()
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
   }
 
   // Export soft subtitles embedded (MKV with SRT)
-  const exportSoftWithSubtitles = async () => {
-    if (!uploadedFile) {
-      alert('Vui lòng chọn video')
-      return
-    }
-    const track = targetSubtitles.length ? targetSubtitles : sourceSubtitles
-    if (track.length === 0) {
-      alert('Chưa có phụ đề để xuất')
-      return
-    }
-    try {
-      setIsExporting(true)
-      const ffmpeg = await getOrCreateFfmpeg()
-      const inputName = 'input.mp4'
-      const subsName = 'subs.srt'
-      const outputName = 'output.mkv'
-      // write inputs
-      ffmpeg.FS('writeFile', inputName, await (FFmpegWasm as any).fetchFile(uploadedFile))
-      ffmpeg.FS('writeFile', subsName, new TextEncoder().encode(cuesToSrt(track)))
-      // mux: copy streams, add srt as subtitle stream
-      await ffmpeg.run('-i', inputName, '-i', subsName, '-c', 'copy', '-c:s', 'srt', outputName)
-      const data = ffmpeg.FS('readFile', outputName)
-      const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/x-matroska' }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = (uploadedFile.name.replace(/\.[^.]+$/, '') || 'video') + '_with_subs.mkv'
-      a.click()
-      URL.revokeObjectURL(url)
-      // cleanup
-      ffmpeg.FS('unlink', inputName)
-      ffmpeg.FS('unlink', subsName)
-      ffmpeg.FS('unlink', outputName)
-    } catch (e) {
-      console.error(e)
-      alert('Xuất file thất bại. Trình duyệt có thể thiếu tài nguyên. Thử lại với file nhỏ hơn.')
-    } finally {
-      setIsExporting(false)
-    }
-  }
+  // exportSoftWithSubtitles removed (moved to ProgressDetailPage)
   return (
     <div className="bg-gray-900 px-8 py-8 min-h-full">
       <div className="max-w-6xl mx-auto">
@@ -440,6 +453,25 @@ export default function CreatePage() {
           <p className="text-lg text-gray-400 text-center">
             Upload your video and configure translation settings
           </p>
+          
+          {/* Connection Status */}
+          <div className="flex justify-center items-center gap-4 mt-4">
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+              isWebSocketConnected ? 'bg-green-600/20 text-green-300' : 'bg-red-600/20 text-red-300'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                isWebSocketConnected ? 'bg-green-400' : 'bg-red-400'
+              }`}></div>
+              {isWebSocketConnected ? 'Connected' : 'Disconnected'}
+            </div>
+            
+            {/* Error Display */}
+            {(uploadError || jobError) && (
+              <div className="bg-red-600/20 text-red-300 px-3 py-1 rounded-full text-sm">
+                {uploadError || jobError}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* File Upload Section */}
@@ -627,32 +659,32 @@ export default function CreatePage() {
 
             <div className="flex items-end gap-4">
               {/* Source Language */}
-              <div className="flex-1">
+              <div className="flex-1 relative">
                 <label className="block text-sm text-gray-300 mb-2">Source Language</label>
                 <button
                   className="w-full bg-gray-600 rounded-lg px-4 py-3 flex items-center justify-between text-white"
-                  onClick={() => setShowSourceDropdown((v) => !v)}
+                  onClick={toggleSourceDropdown}
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-lg">🌐</span>
-                    <span>{sourceLang}</span>
+                    <span>{availableLanguages.find(l => l.code === sourceLang)?.name || sourceLang}</span>
                   </div>
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
                 {showSourceDropdown && (
-                  <div className="mt-2 bg-gray-700 rounded-lg border border-gray-600 shadow-lg overflow-hidden">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-gray-700 rounded-lg border border-gray-600 shadow-lg overflow-hidden z-10 max-h-80 overflow-y-auto">
                     {availableLanguages.map((lang) => (
                       <button
-                        key={lang}
+                        key={lang.code}
                         onClick={() => {
-                          setSourceLang(lang)
+                          setSourceLang(lang.code)
                           setShowSourceDropdown(false)
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm ${sourceLang === lang ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
+                        className={`w-full text-left px-4 py-2 text-sm ${sourceLang === lang.code ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
                       >
-                        {lang}
+                        {lang.name}
                       </button>
                     ))}
                   </div>
@@ -676,32 +708,32 @@ export default function CreatePage() {
               </div>
 
               {/* Target Language */}
-              <div className="flex-1">
+              <div className="flex-1 relative">
                 <label className="block text-sm text-gray-300 mb-2">Target Language</label>
                 <button
                   className="w-full bg-gray-600 rounded-lg px-4 py-3 flex items-center justify-between text-white"
-                  onClick={() => setShowTargetDropdown((v) => !v)}
+                  onClick={toggleTargetDropdown}
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-lg">🌐</span>
-                    <span>{targetLang}</span>
+                    <span>{availableLanguages.find(l => l.code === targetLang)?.name || targetLang}</span>
                   </div>
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
                 {showTargetDropdown && (
-                  <div className="mt-2 bg-gray-700 rounded-lg border border-gray-600 shadow-lg overflow-hidden">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-gray-700 rounded-lg border border-gray-600 shadow-lg overflow-hidden z-10 max-h-80 overflow-y-auto">
                     {availableLanguages.map((lang) => (
                       <button
-                        key={lang}
+                        key={lang.code}
                         onClick={() => {
-                          setTargetLang(lang)
+                          setTargetLang(lang.code)
                           setShowTargetDropdown(false)
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm ${targetLang === lang ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
+                        className={`w-full text-left px-4 py-2 text-sm ${targetLang === lang.code ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
                       >
-                        {lang}
+                        {lang.name}
                       </button>
                     ))}
                   </div>
@@ -716,11 +748,11 @@ export default function CreatePage() {
             <div className="relative">
               <button
                 className="w-full bg-gray-600 rounded-lg px-4 py-3 flex items-center justify-between text-white"
-                onClick={() => setShowModelDropdown((v) => !v)}
+                onClick={toggleModelDropdown}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-gray-300">Model AI:</span>
-                  <span>{selectedModel}</span>
+                  <span>{availableModels.find(m => m.id === selectedModel)?.name || selectedModel}</span>
                 </div>
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -730,14 +762,14 @@ export default function CreatePage() {
                 <div className="absolute top-full left-0 right-0 mt-2 bg-gray-700 rounded-lg shadow-lg border border-gray-600 z-10 overflow-hidden max-h-80 overflow-y-auto">
                   {availableModels.map((model) => (
                     <button
-                      key={model}
+                      key={model.id}
                       onClick={() => {
-                        setSelectedModel(model)
+                        setSelectedModel(model.id)
                         setShowModelDropdown(false)
                       }}
-                      className={`w-full px-4 py-3 text-left ${selectedModel === model ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
+                      className={`w-full px-4 py-3 text-left ${selectedModel === model.id ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
                     >
-                      {model}
+                      {model.name}
                     </button>
                   ))}
                 </div>
@@ -909,7 +941,13 @@ export default function CreatePage() {
                 >
                   Cancel
                 </button>
-                {/* Translate/Export moved to ProgressDetailPage */}
+                <button
+                  className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                  onClick={startTranslation}
+                  disabled={!uploadedFile || isUploading || isCreatingJob}
+                >
+                  {isCreatingJob ? 'Creating Job...' : 'Start Translation'}
+                </button>
               </div>
             </div>
           </div>

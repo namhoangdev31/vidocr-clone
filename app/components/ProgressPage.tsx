@@ -1,7 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useJobManagement } from '@/app/hooks/useJobManagement'
+import { useWebSocket } from '@/app/hooks/useWebSocket'
+import { JobResponse } from '@/app/lib/api/videoTranslationService'
+import { STAGE_DISPLAY_NAMES } from '@/app/lib/config/environment'
 
 type ProgressStatus = 'processing' | 'queued' | 'completed' | 'failed' | 'paused'
 
@@ -12,6 +16,16 @@ type JobItem = {
   durationMin: number
   status: ProgressStatus
   progressPct: number
+  stage?: string
+  message?: string
+  createdAt?: string
+  outputs?: {
+    srtKey?: string
+    assKey?: string
+    vttKey?: string
+    mp4Key?: string
+    voiceKey?: string
+  }
 }
 
 const statusLabel: Record<ProgressStatus, string> = {
@@ -26,13 +40,35 @@ export default function ProgressPage() {
   const router = useRouter()
   const [filter, setFilter] = useState<'all' | 'processing' | 'completed' | 'queued'>('all')
 
-  const [jobs, setJobs] = useState<JobItem[]>([
-    { id: '1', name: 'Ep_10_Small_talk.mp4', sizeMb: 22.9, durationMin: 6, status: 'processing', progressPct: 75 },
-    { id: '2', name: 'Meeting_Recording.mp4', sizeMb: 156.3, durationMin: 25, status: 'completed', progressPct: 100 },
-    { id: '3', name: 'Tutorial_Video_Part1.mp4', sizeMb: 89.7, durationMin: 15, status: 'queued', progressPct: 0 },
-    { id: '4', name: 'Product_Demo.mp4', sizeMb: 45.2, durationMin: 8, status: 'processing', progressPct: 45 },
-    { id: '5', name: 'Interview_Session.mp4', sizeMb: 198.1, durationMin: 35, status: 'completed', progressPct: 100 },
-  ])
+  // API integration
+  const { 
+    jobs: apiJobs, 
+    isLoading, 
+    error, 
+    refreshJobs, 
+    cancelJob 
+  } = useJobManagement({
+    autoRefresh: true,
+    refreshInterval: 5000
+  })
+
+  const { isConnected: isWebSocketConnected } = useWebSocket()
+
+  // Convert API jobs to display format
+  const jobs: JobItem[] = useMemo(() => {
+    return apiJobs.map((job: JobResponse) => ({
+      id: job.id,
+      name: `Job_${job.id.slice(-8)}.mp4`, // Generate a display name
+      sizeMb: 0, // This would need to come from the API
+      durationMin: 0, // This would need to come from the API
+      status: job.status as ProgressStatus,
+      progressPct: job.progress || 0,
+      stage: job.stage,
+      message: job.message,
+      createdAt: job.createdAt,
+      outputs: job.outputs
+    }))
+  }, [apiJobs])
 
   const filtered = useMemo(() => {
     if (filter === 'all') return jobs
@@ -48,22 +84,66 @@ export default function ProgressPage() {
     }
   }, [jobs])
 
-  const actionPause = (id: string) => {
-    setJobs(list => list.map(j => j.id === id ? { ...j, status: 'paused' } : j))
+  const actionPause = async (id: string) => {
+    try {
+      await cancelJob(id)
+      // Job status will be updated via WebSocket
+    } catch (error) {
+      console.error('Failed to pause job:', error)
+    }
   }
+  
   const actionResume = (id: string) => {
-    setJobs(list => list.map(j => j.id === id ? { ...j, status: 'processing' } : j))
+    // Resume functionality would need to be implemented in the API
+    console.log('Resume job:', id)
   }
-  const actionDelete = (id: string) => {
-    setJobs(list => list.filter(j => j.id !== id))
+  
+  const actionDelete = async (id: string) => {
+    try {
+      await cancelJob(id)
+      // Job will be removed from the list via API refresh
+    } catch (error) {
+      console.error('Failed to delete job:', error)
+    }
   }
 
   return (
     <div className="px-8 py-8 bg-gray-900 min-h-full">
       <div className="max-w-5xl mx-auto">
         <div className="mb-6">
-          <h2 className="text-2xl font-semibold text-white">Tiến trình xử lý</h2>
-          <p className="text-gray-400 text-sm">Theo dõi trạng thái xử lý video của bạn</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">Tiến trình xử lý</h2>
+              <p className="text-gray-400 text-sm">Theo dõi trạng thái xử lý video của bạn</p>
+            </div>
+            
+            {/* Connection Status and Refresh */}
+            <div className="flex items-center gap-4">
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                isWebSocketConnected ? 'bg-green-600/20 text-green-300' : 'bg-red-600/20 text-red-300'
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  isWebSocketConnected ? 'bg-green-400' : 'bg-red-400'
+                }`}></div>
+                {isWebSocketConnected ? 'Connected' : 'Disconnected'}
+              </div>
+              
+              <button
+                onClick={refreshJobs}
+                disabled={isLoading}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-600"
+              >
+                {isLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+          
+          {/* Error Display */}
+          {error && (
+            <div className="mt-4 bg-red-600/20 text-red-300 px-4 py-2 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
@@ -96,15 +176,22 @@ export default function ProgressPage() {
                   <h4 className="text-white text-sm font-medium">{job.name}</h4>
                   <span className={`text-xs px-2 py-0.5 rounded ${job.status === 'completed' ? 'bg-emerald-600/20 text-emerald-300' : job.status === 'processing' ? 'bg-blue-600/20 text-blue-300' : job.status === 'queued' ? 'bg-yellow-600/20 text-yellow-300' : job.status === 'failed' ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}`}>{statusLabel[job.status]}</span>
                 </div>
-                <div className="text-xs text-gray-400 mt-1">{job.sizeMb}MB • {job.durationMin} phút</div>
+                <div className="text-xs text-gray-400 mt-1">
+                  {job.sizeMb > 0 ? `${job.sizeMb}MB` : 'Unknown size'} • {job.durationMin > 0 ? `${job.durationMin} phút` : 'Unknown duration'}
+                </div>
 
                 {/* Progress */}
-                {job.status === 'processing' && (
+                {(job.status === 'processing' || job.status === 'queued') && (
                   <div className="mt-2">
                     <div className="w-full h-2 bg-gray-700 rounded">
                       <div className="h-2 bg-blue-600 rounded" style={{ width: `${job.progressPct}%` }} />
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-1">{job.progressPct}%</div>
+                    <div className="text-[10px] text-gray-400 mt-1">
+                      {job.progressPct}% {job.stage && `• ${STAGE_DISPLAY_NAMES[job.stage as keyof typeof STAGE_DISPLAY_NAMES] || job.stage}`}
+                    </div>
+                    {job.message && (
+                      <div className="text-[10px] text-gray-500 mt-1">{job.message}</div>
+                    )}
                   </div>
                 )}
               </div>

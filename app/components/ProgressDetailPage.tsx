@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import * as FFmpegWasm from '@ffmpeg/ffmpeg'
+import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { useJobManagement } from '@/app/hooks/useJobManagement'
+import { useWebSocket } from '@/app/hooks/useWebSocket'
+import { videoTranslationService } from '@/app/lib/api/videoTranslationService'
+import { STAGE_DISPLAY_NAMES } from '@/app/lib/config/environment'
 
 // Minimal subset re-used from CreatePage
 
@@ -37,22 +41,70 @@ export default function ProgressDetailPage({ jobId, onBack }: ProgressDetailPage
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [sourceSubtitles, setSourceSubtitles] = useState<SubtitleCue[]>([])
   const [targetSubtitles, setTargetSubtitles] = useState<SubtitleCue[]>([])
+  const [downloadUrls, setDownloadUrls] = useState<Record<string, string>>({})
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
   const [durationMs, setDurationMs] = useState(0)
   const timelineRef = useRef<HTMLDivElement>(null)
 
-  // Fake load by jobId; integrate real API later
+  // API integration
+  const { getJobStatus, cancelJob, isLoading, error } = useJobManagement({
+    autoRefresh: false
+  })
+
+  const { isConnected: isWebSocketConnected } = useWebSocket()
+
+  // Load job data
   useEffect(() => {
-    // Demo video url could be loaded from server; keep null if none
-    setVideoUrl(null)
-    // Demo subtitles
+    const loadJobData = async () => {
+      try {
+        const job = await getJobStatus(jobId)
+        console.log('Job data loaded:', job)
+        
+        // Load video URL if available
+        if (job.outputs?.mp4Key) {
+          try {
+            const downloadResponse = await videoTranslationService.getDownloadUrl(job.outputs.mp4Key)
+            setVideoUrl(downloadResponse.url)
+          } catch (error) {
+            console.error('Failed to get video download URL:', error)
+          }
+        }
+        
+        // Load download URLs for all outputs
+        const urls: Record<string, string> = {}
+        if (job.outputs) {
+          for (const [type, key] of Object.entries(job.outputs)) {
+            if (key) {
+              try {
+                const downloadResponse = await videoTranslationService.getDownloadUrl(key)
+                urls[type] = downloadResponse.url
+              } catch (error) {
+                console.error(`Failed to get download URL for ${type}:`, error)
+              }
+            }
+          }
+        }
+        setDownloadUrls(urls)
+        
+      } catch (error) {
+        console.error('Failed to load job data:', error)
+      }
+    }
+
+    if (jobId) {
+      loadJobData()
+    }
+  }, [jobId, getJobStatus])
+
+  // Demo subtitles (replace with real data from API)
+  useEffect(() => {
     setSourceSubtitles([
       { id: 'c1', startMs: 2000, endMs: 5000, text: 'Xin chào, bạn khỏe không?' },
       { id: 'c2', startMs: 6000, endMs: 9000, text: 'Mình ổn, cảm ơn bạn!' },
     ])
-  }, [jobId])
+  }, [])
 
   const getActiveTrack = () => (targetSubtitles.length ? targetSubtitles : sourceSubtitles)
   const setActiveTrack = (updater: (list: SubtitleCue[]) => SubtitleCue[]) => {
@@ -95,26 +147,51 @@ export default function ProgressDetailPage({ jobId, onBack }: ProgressDetailPage
   }
 
   const exportSoft = async () => {
-    if (!videoUrl) return
+    if (!videoUrl) {
+      alert('Không có video để export')
+      return
+    }
+    
     const track = getActiveTrack()
-    if (track.length === 0) return
-    const ffmpeg = (FFmpegWasm as any).createFFmpeg({ log: false })
-    await ffmpeg.load()
-    const inputName = 'input.mp4'
-    const subsName = 'subs.srt'
-    const outputName = 'output.mkv'
-    const res = await fetch(videoUrl)
-    const buf = new Uint8Array(await res.arrayBuffer())
-    ffmpeg.FS('writeFile', inputName, buf)
-    ffmpeg.FS('writeFile', subsName, new TextEncoder().encode(cuesToSrt(track)))
-    await ffmpeg.run('-i', inputName, '-i', subsName, '-c', 'copy', '-c:s', 'srt', outputName)
-    const data = ffmpeg.FS('readFile', outputName)
-    const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/x-matroska' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'export_with_subs.mkv'
-    a.click()
-    URL.revokeObjectURL(url)
+    if (track.length === 0) {
+      alert('Không có phụ đề để export')
+      return
+    }
+    
+    try {
+      const ffmpeg = new FFmpeg()
+      await ffmpeg.load()
+      const inputName = 'input.mp4'
+      const subsName = 'subs.srt'
+      const outputName = 'output.mkv'
+      const res = await fetch(videoUrl)
+      const buf = new Uint8Array(await res.arrayBuffer())
+      await ffmpeg.writeFile(inputName, buf)
+      await ffmpeg.writeFile(subsName, new TextEncoder().encode(cuesToSrt(track)))
+      await ffmpeg.exec(['-i', inputName, '-i', subsName, '-c', 'copy', '-c:s', 'srt', outputName])
+      const data = await ffmpeg.readFile(outputName)
+      // Handle both string and Uint8Array data from FFmpeg
+      const buffer = typeof data === 'string' ? new TextEncoder().encode(data) : data
+      const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+      const url = URL.createObjectURL(new Blob([arrayBuffer], { type: 'video/x-matroska' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'export_with_subs.mkv'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Export failed:', error)
+      alert('Export thất bại: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }
+
+  const downloadFile = (url: string, filename: string) => {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   return (
@@ -123,14 +200,72 @@ export default function ProgressDetailPage({ jobId, onBack }: ProgressDetailPage
       <div className="h-12 border-b border-gray-700 px-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="px-2 py-1 bg-gray-700 rounded text-xs">Quay lại</button>
-          <div className="text-sm">toàn bộ: 0:00s - 1:01s</div>
-          <div className="text-xs text-gray-400">Ep 10 - Small talk.mp4</div>
+          <div className="text-sm">Job ID: {jobId}</div>
+          <div className="text-xs text-gray-400">
+            {isWebSocketConnected ? '🟢 Connected' : '🔴 Disconnected'}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button className="px-2 py-1 bg-gray-700 rounded text-xs">▷</button>
           <button onClick={exportSoft} className="px-3 py-1 bg-blue-600 rounded text-xs">XUẤT BẢN</button>
         </div>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-600/20 text-red-300 px-4 py-2 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Download Section */}
+      {Object.keys(downloadUrls).length > 0 && (
+        <div className="bg-gray-800 p-4 border-b border-gray-700">
+          <h3 className="text-sm font-medium text-white mb-2">Download Results</h3>
+          <div className="flex flex-wrap gap-2">
+            {downloadUrls.srtKey && (
+              <button
+                onClick={() => downloadFile(downloadUrls.srtKey, 'subtitles.srt')}
+                className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+              >
+                Download SRT
+              </button>
+            )}
+            {downloadUrls.assKey && (
+              <button
+                onClick={() => downloadFile(downloadUrls.assKey, 'subtitles.ass')}
+                className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+              >
+                Download ASS
+              </button>
+            )}
+            {downloadUrls.vttKey && (
+              <button
+                onClick={() => downloadFile(downloadUrls.vttKey, 'subtitles.vtt')}
+                className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+              >
+                Download VTT
+              </button>
+            )}
+            {downloadUrls.mp4Key && (
+              <button
+                onClick={() => downloadFile(downloadUrls.mp4Key, 'video.mp4')}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+              >
+                Download Video
+              </button>
+            )}
+            {downloadUrls.voiceKey && (
+              <button
+                onClick={() => downloadFile(downloadUrls.voiceKey, 'audio.mp3')}
+                className="px-3 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700"
+              >
+                Download Audio
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex">
         {/* Left toolbar */}
