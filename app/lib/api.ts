@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // Base URL cho server API
-const API_BASE_URL = 'http://localhost:3001/v1'
+const API_BASE_URL = 'https://dichtudong-clone-api.onrender.com/v1'
 
 // Tạo axios instance
 export const apiClient = axios.create({
