@@ -15,7 +15,7 @@ export default function ClientAuthGuard({ children }: ClientAuthGuardProps) {
 
   const isPublicRoute = useMemo(() => {
     if (!pathname) return false
-    return pathname.startsWith('/login') || pathname.startsWith('/api/auth')
+    return pathname.startsWith('/login') || pathname.startsWith('/api/auth') || pathname.startsWith('/') || pathname.startsWith('/dich-vu') || pathname.startsWith('/gia-ca') || pathname.startsWith('/thu-vien') || pathname.startsWith('/lien-he') || pathname.startsWith('/huong-dan') || pathname.startsWith('/landing')
   }, [pathname])
 
   useEffect(() => {
