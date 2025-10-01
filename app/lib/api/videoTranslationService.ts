@@ -250,6 +250,17 @@ class VideoTranslationService {
     return headers
   }
 
+  private getMultipartHeaders(): HeadersInit {
+    const headers: HeadersInit = {
+      'Accept': 'application/json'
+    }
+    const token = tokenManager.getAccessToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    return headers
+  }
+
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       // Handle 401 Unauthorized - token expired
@@ -270,8 +281,8 @@ class VideoTranslationService {
   }
 
   // File Upload Methods
-  async getPresignedUrl(fileName: string, fileType: string, category: string = 'video'): Promise<PresignedUrlResponse> {
-    const response = await fetch(`${this.baseUrl}/uploads/presigned`, {
+  async getPresignedUrl(fileName: string, fileType: string, category: string = 'input'): Promise<PresignedUrlResponse> {
+    const response = await fetch(`${this.baseUrl}/upload/presign/put`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -288,9 +299,9 @@ class VideoTranslationService {
     fileName: string, 
     fileType: string, 
     fileSize: number, 
-    category: string = 'video'
+    category: string = 'input'
   ): Promise<MultipartInitiateResponse> {
-    const response = await fetch(`${this.baseUrl}/uploads/multipart/initiate`, {
+    const response = await fetch(`${this.baseUrl}/upload/presign/multipart/initiate`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -309,7 +320,7 @@ class VideoTranslationService {
     uploadId: string, 
     partNumber: number
   ): Promise<MultipartSignPartResponse> {
-    const response = await fetch(`${this.baseUrl}/uploads/multipart/sign-part`, {
+    const response = await fetch(`${this.baseUrl}/upload/presign/multipart/sign-part`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -327,7 +338,7 @@ class VideoTranslationService {
     uploadId: string, 
     parts: Array<{ PartNumber: number; ETag: string }>
   ): Promise<{ key: string }> {
-    const response = await fetch(`${this.baseUrl}/uploads/multipart/complete`, {
+    const response = await fetch(`${this.baseUrl}/upload/presign/multipart/complete`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -346,6 +357,69 @@ class VideoTranslationService {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(jobData)
+    })
+
+    return this.handleResponse<JobResponse>(response)
+  }
+
+  async uploadVideoAndCreateJob(params: {
+    file?: File
+    fileKey?: string
+    sourceLang: string
+    targetLang: string
+    model: string
+    aiProvider: 'openai' | 'anthropic'
+    subtitleFormat: 'srt' | 'ass' | 'vtt'
+    burnSub: boolean
+    hardSub?: boolean
+    softSub?: boolean
+    voiceover?: boolean
+    voiceProfile?: string
+    audioDubbing?: boolean
+    audioDubbingV2?: boolean
+    textOnly?: boolean
+    glossaryId?: string
+    webhookUrl?: string
+    advanced?: {
+      removeOriginalVoice?: boolean
+      removeBgm?: boolean
+      mergeCaption?: boolean
+      mergeOpenCaption?: boolean
+      brightness?: number
+      contrast?: number
+    }
+  }): Promise<JobResponse> {
+    const form = new FormData()
+    if (params.file) {
+      form.append('file', params.file)
+    }
+    if (params.fileKey) {
+      form.append('fileKey', params.fileKey)
+    } else if (params.file) {
+      const inferredKey = `inputs/${params.file.name}`
+      form.append('fileKey', inferredKey)
+    }
+    form.append('sourceLang', params.sourceLang)
+    form.append('targetLang', params.targetLang)
+    form.append('model', params.model)
+    form.append('aiProvider', params.aiProvider)
+    form.append('subtitleFormat', params.subtitleFormat)
+    form.append('burnSub', String(!!params.burnSub))
+    if (typeof params.hardSub !== 'undefined') form.append('hardSub', String(!!params.hardSub))
+    if (typeof params.softSub !== 'undefined') form.append('softSub', String(!!params.softSub))
+    if (typeof params.voiceover !== 'undefined') form.append('voiceover', String(!!params.voiceover))
+    if (typeof params.audioDubbing !== 'undefined') form.append('audioDubbing', String(!!params.audioDubbing))
+    if (typeof params.audioDubbingV2 !== 'undefined') form.append('audioDubbingV2', String(!!params.audioDubbingV2))
+    if (typeof params.textOnly !== 'undefined') form.append('textOnly', String(!!params.textOnly))
+    if (params.voiceProfile) form.append('voiceProfile', params.voiceProfile)
+    if (params.glossaryId) form.append('glossaryId', params.glossaryId)
+    if (params.webhookUrl) form.append('webhookUrl', params.webhookUrl)
+    if (params.advanced) form.append('advanced', JSON.stringify(params.advanced))
+
+    const response = await fetch(`${this.baseUrl}/videos/upload`, {
+      method: 'POST',
+      headers: this.getMultipartHeaders(),
+      body: form
     })
 
     return this.handleResponse<JobResponse>(response)
@@ -549,7 +623,7 @@ class VideoTranslationService {
 
   private async uploadSmallFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
     // Get presigned URL
-    const presignResponse = await this.getPresignedUrl(file.name, file.type, 'video')
+    const presignResponse = await this.getPresignedUrl(file.name, file.type, 'input')
     
     // Upload to S3
     const uploadResponse = await fetch(presignResponse.url, {
@@ -577,7 +651,7 @@ class VideoTranslationService {
       file.name, 
       file.type, 
       file.size, 
-      'video'
+      'input'
     )
 
     const { key, uploadId } = initiateResponse

@@ -172,6 +172,7 @@ export default function CreatePage() {
   const [selectedGlossary, setSelectedGlossary] = useState<string | null>(null)
   const [costEstimate, setCostEstimate] = useState<number | null>(null)
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
+  const estimateTimerRef = useRef<number | null>(null)
 
   // Dropdown helpers to tránh mở chồng lấn
   const closeAllDropdowns = () => {
@@ -222,17 +223,26 @@ export default function CreatePage() {
   const availableLanguages = SUPPORTED_LANGUAGES
   const availableModels = aiModels.length > 0 ? aiModels : AI_MODELS
 
-  // Estimate cost when model or file changes
+  // Estimate cost when model or file changes (debounced & stable)
   useEffect(() => {
-    if (uploadedFile && selectedModel) {
-      const estimateTokens = Math.ceil(uploadedFile.size / 1000) // Rough estimate
-      estimateCost(selectedModel, estimateTokens).then(result => {
-        if (result) {
-          setCostEstimate(result)
-        }
-      })
+    if (!uploadedFile || !selectedModel) return
+    if (estimateTimerRef.current) {
+      window.clearTimeout(estimateTimerRef.current)
     }
-  }, [uploadedFile, selectedModel, estimateCost])
+    const tokens = Math.ceil(uploadedFile.size / 1000)
+    estimateTimerRef.current = window.setTimeout(() => {
+      estimateCost(selectedModel, tokens).then(result => {
+        if (result) setCostEstimate(result)
+      }).catch(() => {})
+    }, 400)
+
+    return () => {
+      if (estimateTimerRef.current) {
+        window.clearTimeout(estimateTimerRef.current)
+        estimateTimerRef.current = null
+      }
+    }
+  }, [uploadedFile?.size, selectedModel])
 
   // Format file size for display
   const formatFileSize = (bytes: number) => {
@@ -251,24 +261,8 @@ export default function CreatePage() {
       // Create video preview URL
       const previewUrl = URL.createObjectURL(file)
       setVideoPreview(previewUrl)
-
-      // Upload file using API
-      const fileKey = await uploadFile(file)
-      console.log('File uploaded successfully:', fileKey)
-
-      // Auto-detect language if enabled
-      if (autoDetect) {
-        try {
-          const detectedLang = await detectLanguage(fileKey)
-          if (detectedLang) {
-            setDetectedLanguage(detectedLang)
-            setSourceLang(detectedLang)
-            console.log('Language detected:', detectedLang)
-          }
-        } catch (error) {
-          console.error('Language detection failed:', error)
-        }
-      }
+      // Defer actual upload to startTranslation via /videos/upload
+      // Optional: defer auto-detect until after upload completes
       
     } catch (error) {
       console.error('Upload failed:', error)
@@ -404,48 +398,39 @@ export default function CreatePage() {
     }
 
     try {
-      // First upload the file if not already uploaded
-      let fileKey: string
-      if (!currentJob) {
-        fileKey = await uploadFile(uploadedFile)
-      } else {
-        // File already uploaded, get the key from current job or use a placeholder
-        fileKey = 'inputs/' + uploadedFile.name // This should be the actual key from upload
-      }
-
       // Find selected model details
       const modelDetails = availableModels.find(m => m.id === selectedModel)
       if (!modelDetails) {
         throw new Error('Selected model not found')
       }
 
-      // Prepare job data
-      const jobData: CreateJobRequest = {
-        fileKey,
+      // Upload video and create job in a single request
+      const job = await videoTranslationService.uploadVideoAndCreateJob({
+        file: uploadedFile,
+        fileKey: `inputs/${uploadedFile.name}`,
         sourceLang: autoDetect && detectedLanguage ? detectedLanguage : sourceLang,
         targetLang,
-        burnSub: translationMethod === 'hard',
-        subtitleFormat: translationMethod === 'soft' ? 'srt' : 'ass',
-        voiceover: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
-        voiceProfile: translationMethod === 'dubbing' || translationMethod === 'dubbingV2' ? selectedVoiceProfile : undefined,
         model: selectedModel,
         aiProvider: modelDetails.provider as 'openai' | 'anthropic',
-        softSub: translationMethod === 'soft',
+        subtitleFormat: translationMethod === 'soft' ? 'srt' : 'ass',
+        burnSub: translationMethod === 'hard',
         hardSub: translationMethod === 'hard',
+        softSub: translationMethod === 'soft',
+        voiceover: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
+        voiceProfile: translationMethod === 'dubbing' || translationMethod === 'dubbingV2' ? selectedVoiceProfile : undefined,
         audioDubbing: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
+        audioDubbingV2: translationMethod === 'dubbingV2',
+        textOnly: translationMethod === 'text',
         glossaryId: selectedGlossary || undefined,
         advanced: {
-          removeOriginalText,
+          removeOriginalVoice: false,
           removeBgm: removeBackgroundMusic,
           mergeCaption: mergeCaptions,
           mergeOpenCaption: mergeOpenCaptions,
           brightness,
           contrast
         }
-      }
-
-      // Create translation job
-      const job = await createJob(jobData)
+      })
       console.log('Translation job created:', job)
       
       // Show success message
