@@ -22,7 +22,7 @@ export const JobCard: React.FC<JobCardProps> = ({
       'processing': 'text-blue-600',
       'completed': 'text-green-600',
       'failed': 'text-red-600',
-      'canceled': 'text-gray-600'
+      'cancelled': 'text-gray-600'
     };
     return colors[status] || 'text-gray-600';
   };
@@ -33,7 +33,7 @@ export const JobCard: React.FC<JobCardProps> = ({
       'processing': '🔄',
       'completed': '✅',
       'failed': '❌',
-      'canceled': '⏹️'
+      'cancelled': '⏹️'
     };
     return icons[status] || '❓';
   };
@@ -52,7 +52,7 @@ export const JobCard: React.FC<JobCardProps> = ({
       'uploading': 'Uploading Results',
       'completed': 'Completed',
       'failed': 'Failed',
-      'canceled': 'Canceled'
+      'cancelled': 'Cancelled'
     };
     return stageNames[stage] || stage;
   };
@@ -83,7 +83,7 @@ export const JobCard: React.FC<JobCardProps> = ({
     }
   };
 
-  const canDelete = job.status === 'completed' || job.status === 'failed' || job.status === 'canceled';
+  const canDelete = job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled';
 
   return (
     <div className={`job-card ${className} ${isExpanded ? 'expanded' : ''}`}>
@@ -145,10 +145,10 @@ export const JobCard: React.FC<JobCardProps> = ({
             <span className="message-text">{job.message}</span>
           </div>
           
-          {job.error && (
+          {job.message && (
             <div className="job-error">
               <span className="error-label">Error:</span>
-              <span className="error-text">{job.error}</span>
+              <span className="error-text">{job.message}</span>
             </div>
           )}
           
@@ -176,7 +176,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             <div className="timestamp-item">
               <span className="timestamp-label">Updated:</span>
               <span className="timestamp-value">
-                {new Date(job.updatedAt).toLocaleString()}
+                {new Date(job.createdAt).toLocaleString()}
               </span>
             </div>
           </div>

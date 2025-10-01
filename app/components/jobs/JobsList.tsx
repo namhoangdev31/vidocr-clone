@@ -18,7 +18,7 @@ export const JobsList: React.FC<JobsListProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'createdAt' | 'updatedAt' | 'status'>('createdAt');
+  const [sortBy, setSortBy] = useState<'createdAt' | 'status'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   const { jobs, isLoading, error } = useJobSelectors();
@@ -51,10 +51,6 @@ export const JobsList: React.FC<JobsListProps> = ({
       case 'createdAt':
         aValue = new Date(a.createdAt).getTime();
         bValue = new Date(b.createdAt).getTime();
-        break;
-      case 'updatedAt':
-        aValue = new Date(a.updatedAt).getTime();
-        bValue = new Date(b.updatedAt).getTime();
         break;
       case 'status':
         aValue = a.status;
@@ -166,11 +162,10 @@ export const JobsList: React.FC<JobsListProps> = ({
             <label className="filter-label">Sort by:</label>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'createdAt' | 'updatedAt' | 'status')}
+              onChange={(e) => setSortBy(e.target.value as 'createdAt' | 'status')}
               className="filter-select"
             >
               <option value="createdAt">Created Date</option>
-              <option value="updatedAt">Updated Date</option>
               <option value="status">Status</option>
             </select>
           </div>
