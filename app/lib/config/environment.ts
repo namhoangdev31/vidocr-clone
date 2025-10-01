@@ -1,5 +1,5 @@
 // Environment configuration
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://dichtudong-clone-api.onrender.com'
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://dichtudong-clone-api.onrender.com/v1'
 
 // Export config object for backward compatibility
 export const config = {
@@ -10,6 +10,9 @@ export const config = {
     CHUNK_SIZE: 5 * 1024 * 1024, // 5MB
     SUPPORTED_FORMATS: [
       'video/mp4',
+      'video/mp4v-es',
+      'video/x-m4v',
+      'application/mp4',
       'video/avi', 
       'video/mov',
       'video/wmv',
@@ -36,6 +39,9 @@ export const config = {
   maxFileSize: 5 * 1024 * 1024 * 1024, // 5GB
   allowedVideoTypes: [
     'video/mp4',
+    'video/mp4v-es',
+    'video/x-m4v',
+    'application/mp4',
     'video/avi', 
     'video/mov',
     'video/wmv',
@@ -53,6 +59,9 @@ export const FILE_LIMITS = {
   CHUNK_SIZE: 5 * 1024 * 1024, // 5MB
   SUPPORTED_FORMATS: [
     'video/mp4',
+    'video/mp4v-es',
+    'video/x-m4v',
+    'application/mp4',
     'video/avi', 
     'video/mov',
     'video/wmv',

@@ -62,7 +62,10 @@ class SocketService {
 
       const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null)
       
-      this.socket = io(API_BASE_URL, {
+      // Remove /v1 from WebSocket URL as it's for REST API only
+      const wsUrl = API_BASE_URL.replace('/v1', '')
+      
+      this.socket = io(wsUrl, {
         auth: {
           token: authToken
         },
@@ -88,6 +91,8 @@ class SocketService {
 
       this.socket.on('connect_error', (error) => {
         console.error('WebSocket connection error:', error)
+        console.error('WebSocket URL:', wsUrl)
+        console.error('Auth token present:', !!authToken)
         this.isConnected = false
         reject(error)
       })
