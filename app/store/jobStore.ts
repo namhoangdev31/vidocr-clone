@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-import { Job, JobOutputs } from '../lib/types/api';
+import { JobResponse as Job } from '../lib/api/videoTranslationService';
+
+// Type alias for JobOutputs
+type JobOutputs = NonNullable<Job['outputs']>;
 
 interface JobStore {
   // State

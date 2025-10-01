@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '@/app/lib/config/environment'
+import { tokenManager } from '@/app/lib/api'
 
 export interface CreateJobRequest {
   fileKey: string
@@ -12,11 +13,16 @@ export interface CreateJobRequest {
   webhookUrl?: string
   model: string
   aiProvider: 'openai' | 'anthropic'
+  softSub?: boolean
+  hardSub?: boolean
+  audioDubbing?: boolean
   advanced?: {
     removeOriginalText?: boolean
     removeBgm?: boolean
     mergeCaption?: boolean
     mergeOpenCaption?: boolean
+    brightness?: number
+    contrast?: number
   }
 }
 
@@ -62,13 +68,172 @@ export interface ErrorResponse {
   path: string
 }
 
+// AI Models API Types
+export interface AIModel {
+  id: string
+  name: string
+  provider: string
+  description: string
+  pricePer1KTokens: number
+  speed: number
+  quality: number
+  features: string[]
+  available: boolean
+  estimatedProcessingTime: number
+}
+
+export interface AIModelsResponse {
+  models: AIModel[]
+  lastUpdated: string
+}
+
+export interface CostEstimateResponse {
+  modelId: string
+  estimatedTokens: number
+  estimatedCost: number
+  currency: string
+}
+
+// Language Detection API Types
+export interface LanguageDetectionRequest {
+  audioS3Key: string
+  model?: string
+}
+
+export interface LanguageAlternative {
+  language: string
+  confidence: number
+}
+
+export interface LanguageDetectionResult {
+  language: string
+  languageName: string
+  confidence: number
+  alternatives: LanguageAlternative[]
+}
+
+export interface LanguageDetectionResponse {
+  result: LanguageDetectionResult
+  processingTime: number
+  modelUsed: string
+}
+
+export interface SupportedLanguage {
+  code: string
+  name: string
+  nativeName: string
+}
+
+// Video Preview API Types
+export interface VideoPreviewRequest {
+  videoS3Key: string
+  subtitleS3Key: string
+  startTime: number
+  duration: number
+  showSubtitles: boolean
+  brightness?: number
+  contrast?: number
+  quality?: number
+}
+
+export interface VideoInfo {
+  width: number
+  height: number
+  fps: number
+  bitrate: string
+}
+
+export interface VideoPreviewResponse {
+  previewS3Key: string
+  previewUrl: string
+  processingTime: number
+  fileSize: number
+  actualDuration: number
+  videoInfo: VideoInfo
+}
+
+// Multi-Speaker TTS API Types
+export interface VoiceProfile {
+  id: string
+  name: string
+  gender: string
+  language: string
+  accent: string
+  age: string
+}
+
+export interface VoiceProfilesResponse {
+  profiles: VoiceProfile[]
+}
+
+export interface TTSSegment {
+  startMs: number
+  endMs: number
+  text: string
+  speakerId: string
+}
+
+export interface MultiSpeakerTTSRequest {
+  segments: TTSSegment[]
+  jobId: string
+}
+
+// Glossary API Types
+export interface GlossaryEntry {
+  source: string
+  target: string
+  priority: number
+}
+
+export interface CreateGlossaryRequest {
+  name: string
+  description: string
+  sourceLang: string
+  targetLang: string
+  entries: GlossaryEntry[]
+  isPublic: boolean
+}
+
+export interface Glossary {
+  id: string
+  name: string
+  description: string
+  sourceLang: string
+  targetLang: string
+  entries: GlossaryEntry[]
+  isPublic: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GlossarySearchRequest {
+  sourceText: string
+  sourceLang: string
+  targetLang: string
+  glossaryId: string
+}
+
+export interface GlossarySearchResponse {
+  matches: GlossaryEntry[]
+  confidence: number
+}
+
+// Subtitle Management API Types
+export interface ImportSubtitleRequest {
+  subtitleS3Key: string
+  format: string
+}
+
+export interface ValidateSubtitleRequest {
+  subtitleS3Key: string
+  format: string
+}
+
 class VideoTranslationService {
   private baseUrl: string
-  private token: string | null = null
 
   constructor() {
     this.baseUrl = API_BASE_URL
-    this.token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   }
 
   private getHeaders(): HeadersInit {
@@ -77,8 +242,9 @@ class VideoTranslationService {
       'Accept': 'application/json'
     }
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`
+    const token = tokenManager.getAccessToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
     return headers
@@ -86,6 +252,16 @@ class VideoTranslationService {
 
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
+      // Handle 401 Unauthorized - token expired
+      if (response.status === 401) {
+        // Clear tokens and redirect to login
+        tokenManager.clearTokens()
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login'
+        }
+        throw new Error('Authentication failed. Please login again.')
+      }
+      
       const errorData: ErrorResponse = await response.json()
       throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
     }
@@ -214,17 +390,150 @@ class VideoTranslationService {
 
   // Utility Methods
   setToken(token: string) {
-    this.token = token
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('accessToken', token)
-    }
+    tokenManager.setTokens(token, tokenManager.getRefreshToken() || '')
   }
 
   clearToken() {
-    this.token = null
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('accessToken')
-    }
+    tokenManager.clearTokens()
+  }
+
+  // AI Models API Methods
+  async getAIModels(): Promise<AIModelsResponse> {
+    const response = await fetch(`${this.baseUrl}/ai-models`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+
+    return this.handleResponse<AIModelsResponse>(response)
+  }
+
+  async getRecommendedModels(params: {
+    maxCost?: number
+    minQuality?: number
+    requiredFeatures?: string[]
+  } = {}): Promise<AIModelsResponse> {
+    const searchParams = new URLSearchParams()
+    if (params.maxCost) searchParams.append('maxCost', params.maxCost.toString())
+    if (params.minQuality) searchParams.append('minQuality', params.minQuality.toString())
+    if (params.requiredFeatures) searchParams.append('requiredFeatures', params.requiredFeatures.join(','))
+
+    const response = await fetch(`${this.baseUrl}/ai-models/recommended?${searchParams}`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+
+    return this.handleResponse<AIModelsResponse>(response)
+  }
+
+  async estimateCost(modelId: string, tokens: number): Promise<CostEstimateResponse> {
+    const response = await fetch(`${this.baseUrl}/ai-models/${modelId}/estimate-cost?tokens=${tokens}`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+
+    return this.handleResponse<CostEstimateResponse>(response)
+  }
+
+  // Language Detection API Methods
+  async detectLanguage(request: LanguageDetectionRequest): Promise<LanguageDetectionResponse> {
+    const response = await fetch(`${this.baseUrl}/language-detection/detect`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<LanguageDetectionResponse>(response)
+  }
+
+  async getSupportedLanguages(): Promise<SupportedLanguage[]> {
+    const response = await fetch(`${this.baseUrl}/language-detection/supported-languages`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+
+    return this.handleResponse<SupportedLanguage[]>(response)
+  }
+
+  // Video Preview API Methods
+  async generateVideoPreview(request: VideoPreviewRequest): Promise<VideoPreviewResponse> {
+    const response = await fetch(`${this.baseUrl}/video-preview/generate`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<VideoPreviewResponse>(response)
+  }
+
+  // Multi-Speaker TTS API Methods
+  async getVoiceProfiles(): Promise<VoiceProfilesResponse> {
+    const response = await fetch(`${this.baseUrl}/multi-speaker-tts/voice-profiles`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+
+    return this.handleResponse<VoiceProfilesResponse>(response)
+  }
+
+  async generateMultiSpeakerTTS(request: MultiSpeakerTTSRequest): Promise<{ success: boolean; audioKey?: string }> {
+    const response = await fetch(`${this.baseUrl}/multi-speaker-tts/generate`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<{ success: boolean; audioKey?: string }>(response)
+  }
+
+  // Glossary API Methods
+  async createGlossary(request: CreateGlossaryRequest): Promise<Glossary> {
+    const response = await fetch(`${this.baseUrl}/glossary`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<Glossary>(response)
+  }
+
+  async getGlossaries(): Promise<Glossary[]> {
+    const response = await fetch(`${this.baseUrl}/glossary`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+
+    return this.handleResponse<Glossary[]>(response)
+  }
+
+  async searchGlossary(request: GlossarySearchRequest): Promise<GlossarySearchResponse> {
+    const response = await fetch(`${this.baseUrl}/glossary/search`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<GlossarySearchResponse>(response)
+  }
+
+  // Subtitle Management API Methods
+  async importSubtitle(jobId: string, request: ImportSubtitleRequest): Promise<{ success: boolean }> {
+    const response = await fetch(`${this.baseUrl}/videos/${jobId}/import-subtitle`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<{ success: boolean }>(response)
+  }
+
+  async validateSubtitle(jobId: string, request: ValidateSubtitleRequest): Promise<{ valid: boolean; errors?: string[] }> {
+    const response = await fetch(`${this.baseUrl}/videos/${jobId}/validate-subtitle`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(request)
+    })
+
+    return this.handleResponse<{ valid: boolean; errors?: string[] }>(response)
   }
 
   // File Upload Helper

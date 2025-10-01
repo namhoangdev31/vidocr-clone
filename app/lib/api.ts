@@ -1,7 +1,6 @@
 import axios from 'axios'
+import { API_BASE_URL } from './config/environment'
 
-// Base URL cho server API
-const API_BASE_URL = 'https://dichtudong-clone-api.onrender.com/v1'
 
 // Tạo axios instance
 export const apiClient = axios.create({
@@ -86,7 +85,7 @@ export const authAPI = {
   }
 }
 
-// Translation API (stubbed schema)
+// Translation API (legacy - will be deprecated)
 export interface TranslateSubtitleItemRequest {
   text: string
   sourceLang: string
@@ -99,7 +98,7 @@ export interface TranslateSubtitleItemResponse {
 
 export const translationAPI = {
   translateText: async (payload: TranslateSubtitleItemRequest): Promise<TranslateSubtitleItemResponse> => {
-    // Endpoint giả định; thay bằng endpoint thật của bạn
+    // Legacy endpoint - use videoTranslationService instead
     const response = await apiClient.post<TranslateSubtitleItemResponse>('/translate/text', payload)
     return response.data
   }

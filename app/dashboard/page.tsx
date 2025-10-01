@@ -12,7 +12,7 @@ import { ToastProvider, useToastHelpers } from '../components/common/Toast';
 import { VideoService } from '../lib/api/videoService';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useJobStore } from '../store/jobStore';
-import { CreateJobData } from '../lib/types/api';
+import { CreateJobRequest as CreateJobData } from '../lib/api/videoTranslationService';
 
 export default function DashboardPage() {
   const [currentStep, setCurrentStep] = useState<'upload' | 'options' | 'processing' | 'results'>('upload');

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useJobStore, useJobSelectors } from '../../store/jobStore';
-import { Job } from '../../lib/types/api';
+import { JobResponse as Job } from '../../lib/api/videoTranslationService';
 import { JobCard } from './JobCard';
 
 interface JobsListProps {

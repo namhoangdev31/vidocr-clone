@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Job } from '../../lib/types/api';
+import { JobResponse as Job } from '../../lib/api/videoTranslationService';
 import { useJobStore } from '../../store/jobStore';
 
 interface JobCardProps {

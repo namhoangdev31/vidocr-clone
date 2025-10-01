@@ -1,4 +1,4 @@
-// API Types for Video Translation
+// API Types for Video Translation (Legacy - use videoTranslationService.ts instead)
 export interface CreateJobData {
   fileKey: string;
   sourceLang: string;

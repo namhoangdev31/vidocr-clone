@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { VideoService } from '../../lib/api/videoService';
-import { JobOutputs, DownloadUrlResponse } from '../../lib/types/api';
+import { JobResponse, DownloadUrlResponse } from '../../lib/api/videoTranslationService';
+
+type JobOutputs = NonNullable<JobResponse['outputs']>;
 
 interface DownloadResultsProps {
   outputs: JobOutputs;

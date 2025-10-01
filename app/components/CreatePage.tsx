@@ -6,6 +6,8 @@ import { translationAPI } from '@/app/lib/api'
 import { useFileUpload } from '@/app/hooks/useFileUpload'
 import { useJobManagement } from '@/app/hooks/useJobManagement'
 import { useWebSocket } from '@/app/hooks/useWebSocket'
+import { useCreatePageData } from '@/app/hooks/useCreatePageData'
+import AuthStatus from '@/app/components/common/AuthStatus'
 import { videoTranslationService, CreateJobRequest } from '@/app/lib/api/videoTranslationService'
 import { SUPPORTED_LANGUAGES, AI_MODELS, ERROR_CODES } from '@/app/lib/config/environment'
 
@@ -152,6 +154,25 @@ export default function CreatePage() {
 
   const { isConnected: isWebSocketConnected } = useWebSocket()
 
+  // Single hook để quản lý tất cả data cần thiết
+  const { 
+    aiModels, 
+    estimateCost, 
+    isEstimating, 
+    voiceProfiles, 
+    glossaries, 
+    detectLanguage,
+    isLoading: isDataLoading,
+    error: dataError 
+  } = useCreatePageData()
+
+  // Enhanced state for new features
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null)
+  const [selectedVoiceProfile, setSelectedVoiceProfile] = useState<string>('default')
+  const [selectedGlossary, setSelectedGlossary] = useState<string | null>(null)
+  const [costEstimate, setCostEstimate] = useState<number | null>(null)
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
+
   // Dropdown helpers to tránh mở chồng lấn
   const closeAllDropdowns = () => {
     setShowSourceDropdown(false)
@@ -199,7 +220,19 @@ export default function CreatePage() {
 
   // Get language and model options from config
   const availableLanguages = SUPPORTED_LANGUAGES
-  const availableModels = AI_MODELS
+  const availableModels = aiModels.length > 0 ? aiModels : AI_MODELS
+
+  // Estimate cost when model or file changes
+  useEffect(() => {
+    if (uploadedFile && selectedModel) {
+      const estimateTokens = Math.ceil(uploadedFile.size / 1000) // Rough estimate
+      estimateCost(selectedModel, estimateTokens).then(result => {
+        if (result) {
+          setCostEstimate(result)
+        }
+      })
+    }
+  }, [uploadedFile, selectedModel, estimateCost])
 
   // Format file size for display
   const formatFileSize = (bytes: number) => {
@@ -222,6 +255,20 @@ export default function CreatePage() {
       // Upload file using API
       const fileKey = await uploadFile(file)
       console.log('File uploaded successfully:', fileKey)
+
+      // Auto-detect language if enabled
+      if (autoDetect) {
+        try {
+          const detectedLang = await detectLanguage(fileKey)
+          if (detectedLang) {
+            setDetectedLanguage(detectedLang)
+            setSourceLang(detectedLang)
+            console.log('Language detected:', detectedLang)
+          }
+        } catch (error) {
+          console.error('Language detection failed:', error)
+        }
+      }
       
     } catch (error) {
       console.error('Upload failed:', error)
@@ -375,19 +422,25 @@ export default function CreatePage() {
       // Prepare job data
       const jobData: CreateJobRequest = {
         fileKey,
-        sourceLang: autoDetect ? 'auto' : sourceLang,
+        sourceLang: autoDetect && detectedLanguage ? detectedLanguage : sourceLang,
         targetLang,
         burnSub: translationMethod === 'hard',
         subtitleFormat: translationMethod === 'soft' ? 'srt' : 'ass',
         voiceover: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
-        voiceProfile: translationMethod === 'dubbing' || translationMethod === 'dubbingV2' ? 'default' : undefined,
+        voiceProfile: translationMethod === 'dubbing' || translationMethod === 'dubbingV2' ? selectedVoiceProfile : undefined,
         model: selectedModel,
         aiProvider: modelDetails.provider as 'openai' | 'anthropic',
+        softSub: translationMethod === 'soft',
+        hardSub: translationMethod === 'hard',
+        audioDubbing: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
+        glossaryId: selectedGlossary || undefined,
         advanced: {
           removeOriginalText,
           removeBgm: removeBackgroundMusic,
           mergeCaption: mergeCaptions,
-          mergeOpenCaption: mergeOpenCaptions
+          mergeOpenCaption: mergeOpenCaptions,
+          brightness,
+          contrast
         }
       }
 
@@ -465,10 +518,12 @@ export default function CreatePage() {
               {isWebSocketConnected ? 'Connected' : 'Disconnected'}
             </div>
             
+            <AuthStatus />
+            
             {/* Error Display */}
-            {(uploadError || jobError) && (
+            {(uploadError || jobError || dataError) && (
               <div className="bg-red-600/20 text-red-300 px-3 py-1 rounded-full text-sm">
-                {uploadError || jobError}
+                {uploadError || jobError || dataError}
               </div>
             )}
           </div>
@@ -744,7 +799,17 @@ export default function CreatePage() {
 
           {/* AI Model Selection */}
           <div className="bg-gray-800 rounded-lg p-6">
-            <h3 className="text-lg font-medium text-white mb-4">Lựa chọn mô hình AI</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-white">Lựa chọn mô hình AI</h3>
+              {isDataLoading && (
+                <div className="text-sm text-blue-400">Đang tải...</div>
+              )}
+              {costEstimate && !isDataLoading && (
+                <div className="text-sm text-green-400">
+                  Ước tính: ${costEstimate.toFixed(4)} USD
+                </div>
+              )}
+            </div>
             <div className="relative">
               <button
                 className="w-full bg-gray-600 rounded-lg px-4 py-3 flex items-center justify-between text-white"
@@ -760,7 +825,12 @@ export default function CreatePage() {
               </button>
               {showModelDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-gray-700 rounded-lg shadow-lg border border-gray-600 z-10 overflow-hidden max-h-80 overflow-y-auto">
-                  {availableModels.map((model) => (
+                  {isDataLoading ? (
+                    <div className="px-4 py-3 text-center text-gray-400">
+                      Đang tải danh sách models...
+                    </div>
+                  ) : (
+                    availableModels.map((model) => (
                     <button
                       key={model.id}
                       onClick={() => {
@@ -769,12 +839,32 @@ export default function CreatePage() {
                       }}
                       className={`w-full px-4 py-3 text-left ${selectedModel === model.id ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
                     >
-                      {model.name}
+                      <div className="flex flex-col">
+                        <span className="font-medium">{model.name}</span>
+                        <span className="text-xs text-gray-400">
+                          {model.provider} • Quality: {'quality' in model ? String(model.quality) : 'N/A'}/10 • Speed: {'speed' in model ? String(model.speed) : 'N/A'}
+                        </span>
+                      </div>
                     </button>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
             </div>
+            
+            {/* Language Detection Status */}
+            {detectedLanguage && (
+              <div className="mt-4 p-3 bg-blue-600/20 border border-blue-500/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-blue-300">
+                    Đã nhận diện ngôn ngữ: {availableLanguages.find(l => l.code === detectedLanguage)?.name || detectedLanguage}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Translation Options */}
@@ -832,82 +922,138 @@ export default function CreatePage() {
 
             {/* Advanced Tools */}
             <div className="mb-8">
-              <h4 className="text-lg font-medium text-white mb-6">Advanced Tools</h4>
-
-              <div className="grid grid-cols-2 gap-6">
-                {/* Toggle Switches */}
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-lg font-medium text-white">Advanced Tools</h4>
                 <button
-                  onClick={() => setRemoveOriginalText(!removeOriginalText)}
-                  className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
+                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  className="text-sm text-blue-400 hover:text-blue-300"
                 >
-                  <div className={`relative w-12 h-7 rounded-full ${removeOriginalText ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                    <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${removeOriginalText ? 'translate-x-6' : 'translate-x-1'}`}></div>
-                  </div>
-                  <span className="text-gray-300">Remove original text</span>
-                </button>
-
-                <button
-                  onClick={() => setRemoveBackgroundMusic(!removeBackgroundMusic)}
-                  className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
-                >
-                  <div className={`relative w-12 h-7 rounded-full ${removeBackgroundMusic ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                    <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${removeBackgroundMusic ? 'translate-x-6' : 'translate-x-1'}`}></div>
-                  </div>
-                  <span className="text-gray-300">Remove background music</span>
-                </button>
-
-                <button
-                  onClick={() => setMergeCaptions(!mergeCaptions)}
-                  className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
-                >
-                  <div className={`relative w-12 h-7 rounded-full ${mergeCaptions ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                    <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${mergeCaptions ? 'translate-x-6' : 'translate-x-1'}`}></div>
-                  </div>
-                  <span className="text-gray-300">Merge captions</span>
-                </button>
-
-                <button
-                  onClick={() => setMergeOpenCaptions(!mergeOpenCaptions)}
-                  className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
-                >
-                  <div className={`relative w-12 h-7 rounded-full ${mergeOpenCaptions ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                    <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${mergeOpenCaptions ? 'translate-x-6' : 'translate-x-1'}`}></div>
-                  </div>
-                  <span className="text-gray-300">Merge open captions</span>
+                  {showAdvancedOptions ? 'Ẩn tùy chọn nâng cao' : 'Hiện tùy chọn nâng cao'}
                 </button>
               </div>
 
-              {/* Example control sliders */}
-              <div className="grid grid-cols-2 gap-6 mt-6">
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-200 text-sm">Chỉnh sáng</span>
-                    <span className="text-gray-400 text-sm">{brightness}</span>
+              {showAdvancedOptions && (
+                <>
+                  <div className="grid grid-cols-2 gap-6 mb-6">
+                    {/* Toggle Switches */}
+                    <button
+                      onClick={() => setRemoveOriginalText(!removeOriginalText)}
+                      className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
+                    >
+                      <div className={`relative w-12 h-7 rounded-full ${removeOriginalText ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${removeOriginalText ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                      </div>
+                      <span className="text-gray-300">Remove original text</span>
+                    </button>
+
+                    <button
+                      onClick={() => setRemoveBackgroundMusic(!removeBackgroundMusic)}
+                      className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
+                    >
+                      <div className={`relative w-12 h-7 rounded-full ${removeBackgroundMusic ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${removeBackgroundMusic ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                      </div>
+                      <span className="text-gray-300">Remove background music</span>
+                    </button>
+
+                    <button
+                      onClick={() => setMergeCaptions(!mergeCaptions)}
+                      className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
+                    >
+                      <div className={`relative w-12 h-7 rounded-full ${mergeCaptions ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${mergeCaptions ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                      </div>
+                      <span className="text-gray-300">Merge captions</span>
+                    </button>
+
+                    <button
+                      onClick={() => setMergeOpenCaptions(!mergeOpenCaptions)}
+                      className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-700"
+                    >
+                      <div className={`relative w-12 h-7 rounded-full ${mergeOpenCaptions ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-transform transform ${mergeOpenCaptions ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                      </div>
+                      <span className="text-gray-300">Merge open captions</span>
+                    </button>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={200}
-                    value={brightness}
-                    onChange={(e) => setBrightness(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                </div>
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-200 text-sm">Chỉnh tương phản</span>
-                    <span className="text-gray-400 text-sm">{contrast}</span>
+
+                  {/* Voice Profile Selection for Dubbing */}
+                  {(translationMethod === 'dubbing' || translationMethod === 'dubbingV2') && (
+                    <div className="mb-6">
+                      <h5 className="text-md font-medium text-white mb-3">Voice Profile</h5>
+                      <div className="grid grid-cols-2 gap-3">
+                        {voiceProfiles.map((profile) => (
+                          <button
+                            key={profile.id}
+                            onClick={() => setSelectedVoiceProfile(profile.id)}
+                            className={`p-3 rounded-lg text-left transition-colors ${
+                              selectedVoiceProfile === profile.id 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                          >
+                            <div className="font-medium">{profile.name}</div>
+                            <div className="text-xs opacity-75">
+                              {profile.gender} • {profile.accent} • {profile.age}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Glossary Selection */}
+                  {glossaries.length > 0 && (
+                    <div className="mb-6">
+                      <h5 className="text-md font-medium text-white mb-3">Glossary</h5>
+                      <select
+                        value={selectedGlossary || ''}
+                        onChange={(e) => setSelectedGlossary(e.target.value || null)}
+                        className="w-full bg-gray-700 text-white rounded-lg px-3 py-2"
+                      >
+                        <option value="">Không sử dụng glossary</option>
+                        {glossaries.map((glossary) => (
+                          <option key={glossary.id} value={glossary.id}>
+                            {glossary.name} ({glossary.sourceLang} → {glossary.targetLang})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Video Enhancement Controls */}
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="bg-gray-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-gray-200 text-sm">Chỉnh sáng</span>
+                        <span className="text-gray-400 text-sm">{brightness}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={200}
+                        value={brightness}
+                        onChange={(e) => setBrightness(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-gray-200 text-sm">Chỉnh tương phản</span>
+                        <span className="text-gray-400 text-sm">{contrast}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={10}
+                        value={contrast}
+                        onChange={(e) => setContrast(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    value={contrast}
-                    onChange={(e) => setContrast(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                </div>
-              </div>
+                </>
+              )}
             </div>
           </div>
 

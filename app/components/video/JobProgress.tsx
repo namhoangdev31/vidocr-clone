@@ -2,7 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { useJobManagement } from '../../hooks/useJobManagement';
-import { JobProgress as JobProgressType } from '../../lib/types/api';
+// JobProgress type is now part of WebSocket events, not API types
+interface JobProgressType {
+  jobId: string;
+  stage: string;
+  progress: number;
+  message: string;
+}
 
 interface JobProgressProps {
   jobId: string;

@@ -1,11 +1,11 @@
 import { config } from '../config/environment';
 import {
-  CreateJobData,
-  Job,
+  CreateJobRequest as CreateJobData,
+  JobResponse as Job,
   PresignedUrlResponse,
   DownloadUrlResponse,
-  ApiError
-} from '../types/api';
+  ErrorResponse as ApiError
+} from './videoTranslationService';
 import { handleApiError, retryWithBackoff } from '../utils/errorHandler';
 
 export class VideoService {

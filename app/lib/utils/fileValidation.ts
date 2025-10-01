@@ -1,5 +1,9 @@
 import { config } from '../config/environment';
-import { ValidationResult } from '../types/api';
+// ValidationResult interface moved here to avoid circular dependencies
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
 
 export const validateVideoFile = (file: File): ValidationResult => {
   const errors: string[] = [];
