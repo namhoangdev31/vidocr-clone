@@ -1,0 +1,10 @@
+export { AffiliateStats } from './AffiliateStats';
+export { ReferralLink } from './ReferralLink';
+export { RecentActivity } from './RecentActivity';
+export { MonthlyGoals } from './MonthlyGoals';
+export { AffiliateTabs } from './AffiliateTabs';
+export { AffiliateDashboard } from './AffiliateDashboard';
+export { ReferralsList } from './ReferralsList';
+export { PaymentHistory } from './PaymentHistory';
+export { PayoutRequestModal } from './PayoutRequestModal';
+export { default as ResourcesTab } from './ResourcesTab';
