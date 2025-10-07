@@ -196,7 +196,7 @@ export default function LoginForm() {
                 <p className="text-sm text-gray-600">
                   Chưa có tài khoản?{" "}
                   <a
-                    href="#"
+                    href="/register"
                     className="text-blue-600 font-medium hover:underline"
                   >
                     Đăng ký ngay
