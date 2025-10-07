@@ -31,9 +31,12 @@ echo "🏗️ Building project..."
 yarn build || npm run build
 
 # 5️⃣ Kiểm tra app trong PM2
-if pm2 list | grep -q "$APP_NAME"; then
+if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
   echo "🔁 Restarting existing PM2 app..."
-  pm2 restart $APP_NAME
+  if ! pm2 restart "$APP_NAME" --update-env; then
+    echo "⚠️ Restart failed, starting a new PM2 app instead..."
+    PORT=$PORT NODE_ENV=$NODE_ENV pm2 start npm --name "$APP_NAME" -- run start
+  fi
 else
   echo "🆕 Starting new PM2 app..."
   PORT=$PORT NODE_ENV=$NODE_ENV pm2 start npm --name "$APP_NAME" -- run start
