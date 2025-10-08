@@ -161,6 +161,7 @@ export function VideoEditor({
           isPlaying={isPlaying}
           onSeek={handleSeek}
           onTogglePlay={handleTogglePlay}
+          fps={videoSource?.fps ?? 30}
           zoom={zoom}
           onZoomChange={setZoom}
         />
