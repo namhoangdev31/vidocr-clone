@@ -12,6 +12,75 @@ const ROW_GAP = 12
 const PADDING_X = 24
 const PADDING_Y = 20
 const BASE_PIXEL_PER_SECOND = 120
+const THUMB_CAPTURE_HEIGHT = 120
+
+const generateVideoThumbnails = async (
+  src: string,
+  thumbnails: TimelineTrack['thumbnails'] = [],
+): Promise<string[]> => {
+  if (!src || !thumbnails?.length) return []
+
+  const video = document.createElement('video')
+  video.src = src
+  video.muted = true
+  video.crossOrigin = 'anonymous'
+  video.preload = 'auto'
+  video.playsInline = true
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onLoaded = () => resolve()
+      const onError = () => reject(new Error('Failed to load video'))
+      video.addEventListener('loadeddata', onLoaded, { once: true })
+      video.addEventListener('error', onError, { once: true })
+    })
+  } catch (error) {
+    return []
+  }
+
+  const durationSeconds = Number.isFinite(video.duration) ? video.duration : undefined
+  const aspect = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9
+  const canvas = document.createElement('canvas')
+  canvas.height = Math.max(THUMB_CAPTURE_HEIGHT, ROW_HEIGHT)
+  canvas.width = Math.max(Math.round(canvas.height * aspect), 2)
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return []
+
+  const results: string[] = []
+
+  const captureAt = (time: number) =>
+    new Promise<void>((resolve, reject) => {
+      const targetTime = Math.max(0, Math.min(time, (durationSeconds ?? time)))
+      const onSeeked = () => {
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          results.push(canvas.toDataURL('image/jpeg', 0.7))
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      }
+      const onError = (err: Event) => reject(err as any)
+      video.addEventListener('seeked', onSeeked, { once: true })
+      video.addEventListener('error', onError, { once: true })
+      try {
+        video.currentTime = Number.isFinite(targetTime) ? targetTime : 0
+      } catch (err) {
+        reject(err)
+      }
+    })
+
+  for (const thumb of thumbnails) {
+    const time = Number.isFinite(thumb.time) ? thumb.time : 0
+    try {
+      await captureAt(time)
+    } catch (err) {
+      // skip frame on failure
+    }
+  }
+
+  return results
+}
 
 const formatTimestamp = (seconds: number) => {
   if (!Number.isFinite(seconds)) return '00:00'
@@ -33,9 +102,10 @@ type TimelineCompositionProps = {
   tracks: TimelineTrack[]
   durationInSeconds: number
   pxPerSecond: number
+  thumbnailMap: Record<string, string[]>
 }
 
-const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durationInSeconds, pxPerSecond }) => {
+const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durationInSeconds, pxPerSecond, thumbnailMap }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const currentSeconds = durationInSeconds > 0 && fps > 0 ? Math.min(durationInSeconds, frame / fps) : 0
@@ -58,7 +128,7 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
   }, [durationInSeconds, tickInterval])
 
   const playheadLeft = currentSeconds * pxPerSecond
-
+  console.log(tracks)
   return (
     <AbsoluteFill
       style={{
@@ -139,57 +209,103 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
             </div>
 
             <div style={{ position: 'absolute', top: MARKER_HEIGHT, left: 0, right: 0, height: totalRowsHeight }}>
-              {tracks.map((track, index) => {
-                const top = index * (ROW_HEIGHT + ROW_GAP)
-                return (
-                  <div
-                    key={`${track.id}-timeline-row`}
-                    style={{
-                      position: 'absolute',
-                      top,
-                      left: 0,
-                      right: 0,
-                      height: ROW_HEIGHT,
-                      borderRadius: 10,
-                      background: 'rgba(30, 41, 59, 0.55)',
-                      border: '1px solid rgba(148, 163, 184, 0.18)',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {track.items.map((item) => {
-                      const startPx = interpolate(item.start, [0, durationInSeconds || 1], [0, timelineWidth])
-                      const widthPx = interpolate(
-                        item.end - item.start,
-                        [0, durationInSeconds || 1],
-                        [0, timelineWidth],
-                        { extrapolateRight: 'clamp' },
-                      )
-                      return (
+                {tracks.map((track, index) => {
+                  const top = index * (ROW_HEIGHT + ROW_GAP)
+                  const isThumbnailTrack = Boolean(
+                    track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length > 0,
+                  )
+                  const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
+                  return (
+                    <div
+                      key={`${track.id}-timeline-row`}
+                      style={{
+                        position: 'absolute',
+                        top,
+                        left: 0,
+                        right: 0,
+                        height: ROW_HEIGHT,
+                        borderRadius: 10,
+                        background: isThumbnailTrack ? 'rgba(15, 23, 42, 0.35)' : 'rgba(30, 41, 59, 0.55)',
+                        border: '1px solid rgba(148, 163, 184, 0.18)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {isThumbnailTrack && (
                         <div
-                          key={item.id}
                           style={{
                             position: 'absolute',
-                            left: startPx,
-                            width: Math.max(4, widthPx),
-                            top: 4,
-                            bottom: 4,
-                            borderRadius: 8,
-                            background: item.color,
-                            boxShadow: '0 8px 18px rgba(15, 23, 42, 0.45)',
+                            inset: 0,
                             display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 11,
-                            fontWeight: 600,
-                            color: '#0f172a',
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.4,
+                            gap: 0,
+                            pointerEvents: 'none',
                           }}
                         >
-                          {item.label}
+                          {track.thumbnails!.map((thumb, thumbIndex) => {
+                            const segmentDuration = thumb.duration ?? totalDuration / track.thumbnails!.length
+                            const widthPercent = Math.min(1, Math.max(segmentDuration / totalDuration, 0))
+                            const flexAmount = Math.max(widthPercent, 0.0001)
+                            const images = thumbnailMap[track.id] ?? []
+                            const imageSrc = images[thumbIndex] ?? images[images.length - 1]
+                            return (
+                              <div
+                                key={`${track.id}-thumb-${thumbIndex}`}
+                                style={{
+                                  flexBasis: `${flexAmount * 100}%`,
+                                  flexGrow: flexAmount,
+                                  flexShrink: 0,
+                                  height: '100%',
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                {imageSrc ? (
+                                  <img
+                                    src={imageSrc}
+                                    alt="thumbnail"
+                                    style={{ height: '100%', display: 'block' }}
+                                  />
+                                ) : (
+                                  <div style={{ width: '100%', height: '100%', background: 'rgba(30,41,59,0.6)' }} />
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
-                      )
-                    })}
+                      )}
+                      {!isThumbnailTrack &&
+                        track.items.map((item) => {
+                          const startPx = interpolate(item.start, [0, durationInSeconds || 1], [0, timelineWidth])
+                          const widthPx = interpolate(
+                            item.end - item.start,
+                            [0, durationInSeconds || 1],
+                            [0, timelineWidth],
+                            { extrapolateRight: 'clamp' },
+                          )
+                          return (
+                            <div
+                              key={item.id}
+                              style={{
+                                position: 'absolute',
+                                left: startPx,
+                                width: Math.max(4, widthPx),
+                                top: 4,
+                                bottom: 4,
+                                borderRadius: 8,
+                                background: item.color,
+                                boxShadow: '0 8px 18px rgba(15, 23, 42, 0.45)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: '#0f172a',
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.4,
+                              }}
+                            >
+                              {item.label}
+                            </div>
+                          )
+                        })}
                   </div>
                 )
               })}
@@ -226,6 +342,8 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
   const playerRef = useRef<PlayerRef>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const thumbnailCacheRef = useRef(new Map<string, string[]>())
+  const [thumbnailMap, setThumbnailMap] = useState<Record<string, string[]>>({})
   const [containerWidth, setContainerWidth] = useState(1024)
 
   const safeFps = Math.max(1, Math.round(fps))
@@ -256,18 +374,70 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
     return undefined
   }, [])
 
-  const availableTimelineWidth = Math.max(240, containerWidth - paddingWidth)
-  const basePxPerSecond = duration > 0 ? availableTimelineWidth / duration : availableTimelineWidth
+  const availableTimelineWidthRaw = Math.max(containerWidth - paddingWidth, 0)
+  const basePxPerSecondRaw = duration > 0 ? availableTimelineWidthRaw / duration : availableTimelineWidthRaw
   const pxPerSecond = useMemo(() => {
-    const zoomFactor = Math.max(0.5, Math.min(zoom / 40, 1))
-    return basePxPerSecond * zoomFactor
-  }, [basePxPerSecond, zoom])
+    const zoomFactor = Math.max(0.4, Math.min(zoom / 40, 1))
+    const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
+    return Math.max(base * zoomFactor, 0.5)
+  }, [basePxPerSecondRaw, zoom])
 
-  const timelineWidth = duration > 0 ? pxPerSecond * duration : availableTimelineWidth
+  const timelineWidth = duration > 0 ? pxPerSecond * duration : availableTimelineWidthRaw
   const totalRowsHeight = tracks.length > 0 ? tracks.length * ROW_HEIGHT + Math.max(0, tracks.length - 1) * ROW_GAP : ROW_HEIGHT
   const totalHeight = MARKER_HEIGHT + totalRowsHeight + PADDING_Y * 2
   const totalWidth = LABEL_WIDTH + timelineWidth + PADDING_X * 2
+  const renderedWidth = Math.min(totalWidth, containerWidth)
+  const scaleRatio = totalWidth > 0 ? renderedWidth / totalWidth : 1
   const durationInFrames = Math.max(1, Math.round(Math.max(0, duration) * safeFps))
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadThumbnails = async () => {
+      const trackPromises = tracks.map(async (track) => {
+        if (!(track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length)) {
+          return [track.id, undefined] as const
+        }
+
+        const cacheKey = `${track.assetSrc}|${track.thumbnails
+          .map((thumb) => `${thumb.time}-${thumb.duration ?? ''}`)
+          .join(',')}`
+        const cached = thumbnailCacheRef.current.get(cacheKey)
+        if (cached) {
+          return [track.id, cached] as const
+        }
+
+        try {
+          const images = await generateVideoThumbnails(track.assetSrc, track.thumbnails)
+          if (!cancelled && images.length) {
+            thumbnailCacheRef.current.set(cacheKey, images)
+          }
+          return [track.id, images] as const
+        } catch (error) {
+          return [track.id, []] as const
+        }
+      })
+
+      const entries = await Promise.all(trackPromises)
+      if (cancelled) return
+
+      setThumbnailMap((prev) => {
+        const next: Record<string, string[]> = {}
+        for (const [trackId, images] of entries) {
+          if (images && images.length) {
+            next[trackId] = images
+          }
+        }
+        return next
+      })
+    }
+
+    loadThumbnails()
+
+    return () => {
+      cancelled = true
+    }
+  }, [tracks])
 
   useEffect(() => {
     if (!playerRef.current) return
@@ -280,21 +450,22 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
       if (!overlayRef.current || duration <= 0) return
       const rect = overlayRef.current.getBoundingClientRect()
       const offsetX = clientX - rect.left
-      const timelineX = offsetX - (LABEL_WIDTH + PADDING_X)
+      const scaledOffset = scaleRatio > 0 ? offsetX / scaleRatio : offsetX
+      const timelineX = scaledOffset - (LABEL_WIDTH + PADDING_X)
       const seconds = timelineX / pxPerSecond
       const clamped = Math.min(duration, Math.max(0, seconds))
       onSeek(clamped)
     },
-    [duration, onSeek, pxPerSecond],
+    [duration, onSeek, pxPerSecond, scaleRatio],
   )
 
   return (
     <div ref={containerRef} className="relative rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/60 w-full">
-      <div className="relative mx-auto" style={{ width: Math.min(totalWidth, containerWidth) }}>
+      <div className="relative mx-auto" style={{ width: renderedWidth }}>
         <Player
           ref={playerRef}
           component={TimelineComposition}
-          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond }}
+          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond, thumbnailMap }}
           durationInFrames={durationInFrames}
           compositionWidth={Math.ceil(totalWidth)}
           compositionHeight={totalHeight}
@@ -306,7 +477,7 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
           clickToPlay={false}
           allowFullscreen={false}
           doubleClickToFullscreen={false}
-          style={{ width: Math.min(totalWidth, containerWidth), height: totalHeight }}
+          style={{ width: renderedWidth, height: totalHeight }}
           className="select-none"
         />
         <div

@@ -167,7 +167,7 @@ export default function VideoEditorPage() {
     setVideoSource({ url, name: file.name, size: file.size })
     setTracks((prev) =>
       prev.map((track) =>
-        track.type === 'video'
+        track.type === 'image'
           ? {
               ...track,
               resourceName: file.name,
@@ -217,17 +217,23 @@ export default function VideoEditorPage() {
     const durationSeconds = videoSource.duration ?? timelineDuration
     const fps = videoSource.fps ?? 30
     const totalDuration = Math.max(durationSeconds, 1)
-    const thumbnailCount = Math.min(12, Math.max(6, Math.ceil(totalDuration / 8)))
+    const desiredSegmentSeconds = 2
+    const thumbnailCount = Math.max(12, Math.min(48, Math.ceil(totalDuration / desiredSegmentSeconds)))
     const segment = totalDuration / thumbnailCount
-    const thumbnails = Array.from({ length: thumbnailCount }, (_, index) => ({
-      id: `thumb-${index}`,
-      time: Math.min(totalDuration, index * segment),
-      duration: segment,
-    }))
+    const thumbnails = Array.from({ length: thumbnailCount }, (_, index) => {
+      const start = Math.min(totalDuration, index * segment)
+      const end = index === thumbnailCount - 1 ? totalDuration : Math.min(totalDuration, (index + 1) * segment)
+      const durationWindow = Math.max(0, end - start)
+      return {
+        id: `thumb-${index}`,
+        time: start,
+        duration: durationWindow,
+      }
+    })
 
     setTracks((prev) =>
       prev.map((track) => {
-        if (track.type !== 'video') return track
+        if (track.type !== 'image') return track
         return {
           ...track,
           resourceName: videoSource.name ?? track.resourceName,
