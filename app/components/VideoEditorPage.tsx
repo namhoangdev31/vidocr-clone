@@ -59,52 +59,22 @@ const DEFAULT_TRANSCRIPTS: TranscriptEntry[] = [
 
 const DEFAULT_TRACKS: TimelineTrack[] = [
   {
-    id: 'video-track',
-    label: 'Video',
-    type: 'video',
+    id: 'text-track',
+    label: 'Text',
+    type: 'text',
     items: [],
-  },
-  {
-    id: 'music-track',
-    label: 'Audio',
-    type: 'audio',
-    resourceName: 'BGM.mp3',
-    items: [
-      { id: 'music', label: 'BGM.mp3', start: 0, end: 60, color: '#10b981' },
-      { id: 'voice', label: 'Voice.wav', start: 12, end: 48, color: '#22d3ee' },
-      { id: 'sfx', label: 'SFX.mp3', start: 40, end: 60, color: '#14b8a6' },
-    ],
   },
   {
     id: 'image-track',
     label: 'Image',
     type: 'image',
-    resourceName: 'Logo.png',
-    items: [
-      { id: 'logo', label: 'Logo', start: 0, end: 18, color: '#f97316' },
-      { id: 'chart', label: 'Chart.png', start: 26, end: 42, color: '#fb7185' },
-    ],
+    items: [],
   },
   {
-    id: 'text-track',
-    label: 'Text',
-    type: 'text',
-    items: [
-      { id: 'txt1', label: 'Text', start: 0, end: 4, color: '#facc15' },
-      { id: 'txt2', label: 'Text', start: 6, end: 10, color: '#facc15' },
-      { id: 'txt3', label: 'Text', start: 12, end: 16, color: '#facc15' },
-      { id: 'txt4', label: 'Text', start: 18, end: 22, color: '#facc15' },
-    ],
-  },
-  {
-    id: 'effect-track',
-    label: 'Effect',
-    type: 'effect',
-    items: [
-      { id: 'fade', label: 'Fade', start: 0, end: 6, color: '#c084fc' },
-      { id: 'zoom', label: 'Zoom', start: 16, end: 24, color: '#a855f7' },
-      { id: 'filter', label: 'Filter', start: 32, end: 40, color: '#d946ef' },
-    ],
+    id: 'audio-track',
+    label: 'Audio',
+    type: 'audio',
+    items: [],
   },
 ]
 
