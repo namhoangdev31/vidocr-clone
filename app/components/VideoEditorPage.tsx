@@ -114,6 +114,7 @@ export default function VideoEditorPage() {
   const [timelineDuration, setTimelineDuration] = useState(60)
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [tracks, setTracks] = useState<TimelineTrack[]>(() => cloneDefaultTracks())
+  const [transcripts, setTranscripts] = useState<TranscriptEntry[]>(DEFAULT_TRANSCRIPTS)
 
   useEffect(() => {
     return () => {
@@ -209,8 +210,53 @@ export default function VideoEditorPage() {
     resetTracks()
   }
 
+  const deriveTranscripts = useCallback((nextTracks: TimelineTrack[]): TranscriptEntry[] => {
+    const textTrack = nextTracks.find((t) => t.type === 'text')
+    if (!textTrack) return []
+    return textTrack.items
+      .map((item) => ({
+        id: item.id,
+        start: item.start,
+        end: item.end,
+        primaryText: item.label,
+        secondaryText: '',
+      }))
+      .sort((a, b) => a.start - b.start)
+  }, [])
+
+  const handleUpdateTrackItem = ({ trackId, itemId, start, end }: { trackId: string; itemId: string; start?: number; end?: number }) => {
+    setTracks((prev) => {
+      const nextTracks = prev.map((track) => {
+        if (track.id !== trackId) return track
+
+        const updatedItems = track.items
+          .map((item) => {
+            if (item.id !== itemId) return item
+            const minDuration = 0.1
+            const trackDuration = videoSource?.duration ?? timelineDuration
+            const nextStart = typeof start === 'number' ? Math.max(0, Math.min(start, trackDuration - minDuration)) : item.start
+            const nextEnd = typeof end === 'number' ? Math.max(nextStart + minDuration, Math.min(end, trackDuration)) : item.end
+            return {
+              ...item,
+              start: nextStart,
+              end: nextEnd,
+            }
+          })
+          .sort((a, b) => a.start - b.start)
+
+        return {
+          ...track,
+          items: updatedItems,
+        }
+      })
+
+      setTranscripts(deriveTranscripts(nextTracks))
+      return nextTracks
+    })
+  }
+
   useEffect(() => {
-    const textTrackItems = DEFAULT_TRANSCRIPTS
+    const baseTextItems = DEFAULT_TRANSCRIPTS
       .map((entry, index) => ({
         id: `transcript-${index}`,
         label: entry.primaryText.length > 42 ? `${entry.primaryText.slice(0, 39)}…` : entry.primaryText,
@@ -221,16 +267,18 @@ export default function VideoEditorPage() {
       .sort((a, b) => a.start - b.start)
 
     if (!videoSource || !videoSource.url) {
-      setTracks((prev) =>
-        prev.map((track) =>
+      setTracks((prev) => {
+        const nextTracks = prev.map((track) =>
           track.type === 'text'
             ? {
                 ...track,
-                items: textTrackItems,
+                items: baseTextItems,
               }
             : track,
-        ),
-      )
+        )
+        setTranscripts(deriveTranscripts(nextTracks))
+        return nextTracks
+      })
       return
     }
 
@@ -251,12 +299,12 @@ export default function VideoEditorPage() {
       }
     })
 
-    setTracks((prev) =>
-      prev.map((track) => {
+    setTracks((prev) => {
+      const nextTracks = prev.map((track) => {
         if (track.type === 'text') {
           return {
             ...track,
-            items: textTrackItems,
+            items: baseTextItems,
           }
         }
 
@@ -279,9 +327,12 @@ export default function VideoEditorPage() {
         }
 
         return track
-      }),
-    )
-  }, [videoSource, timelineDuration])
+      })
+
+      setTranscripts(deriveTranscripts(nextTracks))
+      return nextTracks
+    })
+  }, [videoSource, timelineDuration, deriveTranscripts])
 
   return (
     <div className="h-full">
@@ -290,7 +341,7 @@ export default function VideoEditorPage() {
         toolbarItems={toolbarItems}
         headerInfo={headerInfo}
         tracks={tracks}
-        transcripts={DEFAULT_TRANSCRIPTS}
+        transcripts={transcripts}
         timelineDuration={timelineDuration}
         onUpload={handleUpload}
         onRemoveVideo={handleRemoveVideo}
@@ -298,6 +349,7 @@ export default function VideoEditorPage() {
           setTimelineDuration(Math.round(duration))
           setVideoSource((prev) => (prev ? { ...prev, duration } : prev))
         }}
+        onUpdateTrackItem={handleUpdateTrackItem}
       />
     </div>
   )

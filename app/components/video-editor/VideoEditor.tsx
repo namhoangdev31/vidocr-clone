@@ -20,6 +20,7 @@ export function VideoEditor({
   onRemoveVideo,
   onDurationChange,
   onSeek,
+  onUpdateTrackItem,
 }: VideoEditorProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -164,6 +165,7 @@ export function VideoEditor({
           fps={videoSource?.fps ?? 30}
           zoom={zoom}
           onZoomChange={setZoom}
+          onUpdateTrackItem={onUpdateTrackItem}
         />
       </div>
     </div>

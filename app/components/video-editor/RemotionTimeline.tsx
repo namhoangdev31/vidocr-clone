@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Player, PlayerRef } from '@remotion/player'
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
 import { TimelineTrack } from './types'
@@ -103,9 +103,26 @@ type TimelineCompositionProps = {
   durationInSeconds: number
   pxPerSecond: number
   thumbnailMap: Record<string, string[]>
+  draggingItem: { trackId: string; itemId: string } | null
+  onBeginDrag?: (params: {
+    trackId: string
+    itemId: string
+    mode: 'move' | 'start' | 'end'
+    clientX: number
+    start: number
+    end: number
+    isTextTrack: boolean
+  }) => void
 }
 
-const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durationInSeconds, pxPerSecond, thumbnailMap }) => {
+const TimelineComposition: React.FC<TimelineCompositionProps> = ({
+  tracks,
+  durationInSeconds,
+  pxPerSecond,
+  thumbnailMap,
+  draggingItem,
+  onBeginDrag,
+}) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const currentSeconds = durationInSeconds > 0 && fps > 0 ? Math.min(durationInSeconds, frame / fps) : 0
@@ -128,7 +145,6 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
   }, [durationInSeconds, tickInterval])
 
   const playheadLeft = currentSeconds * pxPerSecond
-  console.log(tracks)
   return (
     <AbsoluteFill
       style={{
@@ -285,9 +301,33 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
                             [0, timelineWidth],
                             { extrapolateRight: 'clamp' },
                           )
+                          const isCurrentDragging =
+                            Boolean(
+                              draggingItem &&
+                                draggingItem.trackId === track.id &&
+                                draggingItem.itemId === item.id,
+                            )
+
+                          const beginDrag = (mode: DragState['mode']) => (event: ReactPointerEvent) => {
+                            if (!onBeginDrag || track.type !== 'text') return
+                            event.preventDefault()
+                            event.stopPropagation()
+                            onBeginDrag({
+                              trackId: track.id,
+                              itemId: item.id,
+                              mode,
+                              clientX: event.clientX,
+                              start: item.start,
+                              end: item.end,
+                              isTextTrack: true
+                            })
+                          }
+
                           return (
                             <div
                               key={item.id}
+                              onPointerDown={isTextTrack ? beginDrag('move') : undefined}
+                              data-role={isTextTrack ? 'track-item' : undefined}
                               style={{
                                 position: 'absolute',
                                 left: startPx,
@@ -296,7 +336,9 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
                                 bottom: 4,
                                 borderRadius: 8,
                                 background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color,
-                                boxShadow: '0 8px 18px rgba(15, 23, 42, 0.45)',
+                                boxShadow: isCurrentDragging
+                                  ? '0 0 0 2px rgba(56, 189, 248, 0.9)'
+                                  : '0 8px 18px rgba(15, 23, 42, 0.45)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: isTextTrack ? 'flex-start' : 'center',
@@ -305,13 +347,48 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
                                 color: isTextTrack ? '#ede9fe' : '#0f172a',
                                 textTransform: isTextTrack ? 'none' : 'uppercase',
                                 letterSpacing: isTextTrack ? 0 : 0.4,
-                                padding: isTextTrack ? '0 12px' : undefined,
+                                padding: isTextTrack ? '0 18px' : undefined,
                                 overflow: 'hidden',
                                 whiteSpace: isTextTrack ? 'nowrap' : undefined,
                                 textOverflow: isTextTrack ? 'ellipsis' : undefined,
+                                cursor: onBeginDrag && isTextTrack ? (isCurrentDragging ? 'grabbing' : 'grab') : 'default',
+                                userSelect: 'none',
+                                zIndex: isTextTrack ? 2 : 1,
                               }}
                             >
-                              {item.label}
+                              {isTextTrack && onBeginDrag ? (
+                                <>
+                                  <span
+                                    onPointerDown={beginDrag('start')}
+                                    data-role="track-handle"
+                                    style={{
+                                      position: 'absolute',
+                                      left: 0,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: 8,
+                                      cursor: 'ew-resize',
+                                      background: 'rgba(15, 23, 42, 0.3)',
+                                    }}
+                                  />
+                                  <span style={{ flex: 1 }}>{item.label}</span>
+                                  <span
+                                    onPointerDown={beginDrag('end')}
+                                    data-role="track-handle"
+                                    style={{
+                                      position: 'absolute',
+                                      right: 0,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: 8,
+                                      cursor: 'ew-resize',
+                                      background: 'rgba(15, 23, 42, 0.3)',
+                                    }}
+                                  />
+                                </>
+                              ) : (
+                                item.label
+                              )}
                             </div>
                           )
                         })}
@@ -345,15 +422,32 @@ type RemotionTimelineProps = {
   fps?: number
   zoom: number
   onSeek: (seconds: number) => void
+  onUpdateTrackItem?: (params: {
+    trackId: string
+    itemId: string
+    start?: number
+    end?: number
+  }) => void
 }
 
-export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek }: RemotionTimelineProps) {
+type DragState = {
+  trackId: string
+  itemId: string
+  mode: 'move' | 'start' | 'end'
+  startClientX: number
+  initialStart: number
+  initialEnd: number
+}
+
+export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek, onUpdateTrackItem }: RemotionTimelineProps) {
   const playerRef = useRef<PlayerRef>(null)
-  const overlayRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const thumbnailCacheRef = useRef(new Map<string, string[]>())
   const [thumbnailMap, setThumbnailMap] = useState<Record<string, string[]>>({})
   const [containerWidth, setContainerWidth] = useState(1024)
+  const [dragState, setDragState] = useState<DragState | null>(null)
+  const [draggingItem, setDraggingItem] = useState<{ trackId: string; itemId: string } | null>(null)
+  const isScrubbingRef = useRef(false)
 
   const safeFps = Math.max(1, Math.round(fps))
   const paddingWidth = LABEL_WIDTH + PADDING_X * 2
@@ -398,6 +492,29 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
   const renderedWidth = Math.min(totalWidth, containerWidth)
   const scaleRatio = totalWidth > 0 ? renderedWidth / totalWidth : 1
   const durationInFrames = Math.max(1, Math.round(Math.max(0, duration) * safeFps))
+
+  const handleBeginDrag = useCallback(
+    ({ trackId, itemId, mode, clientX, start, end }: {
+      trackId: string
+      itemId: string
+      mode: DragState['mode']
+      clientX: number
+      start: number
+      end: number
+    }) => {
+      if (!onUpdateTrackItem) return
+      setDragState({
+        trackId,
+        itemId,
+        mode,
+        startClientX: clientX,
+        initialStart: start,
+        initialEnd: end,
+      })
+      setDraggingItem({ trackId, itemId })
+    },
+    [onUpdateTrackItem],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -456,8 +573,8 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
 
   const handleSeek = useCallback(
     (clientX: number) => {
-      if (!overlayRef.current || duration <= 0) return
-      const rect = overlayRef.current.getBoundingClientRect()
+      if (!containerRef.current || duration <= 0) return
+      const rect = containerRef.current.getBoundingClientRect()
       const offsetX = clientX - rect.left
       const scaledOffset = scaleRatio > 0 ? offsetX / scaleRatio : offsetX
       const timelineX = scaledOffset - (LABEL_WIDTH + PADDING_X)
@@ -468,13 +585,91 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
     [duration, onSeek, pxPerSecond, scaleRatio],
   )
 
+  useEffect(() => {
+    if (!dragState || !onUpdateTrackItem) return
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const deltaPx = (event.clientX - dragState.startClientX) / (scaleRatio || 1)
+      const deltaSeconds = deltaPx / pxPerSecond
+      const segmentLength = dragState.initialEnd - dragState.initialStart
+      const minSegment = 0.1
+      const totalDuration = duration > 0 ? duration : dragState.initialEnd
+
+      let nextStart = dragState.initialStart
+      let nextEnd = dragState.initialEnd
+
+      if (dragState.mode === 'move') {
+        nextStart = Math.max(0, Math.min(dragState.initialStart + deltaSeconds, totalDuration - segmentLength))
+        nextEnd = Math.min(totalDuration, nextStart + segmentLength)
+      } else if (dragState.mode === 'start') {
+        nextStart = Math.max(0, Math.min(dragState.initialStart + deltaSeconds, dragState.initialEnd - minSegment))
+        nextEnd = dragState.initialEnd
+      } else if (dragState.mode === 'end') {
+        nextEnd = Math.min(totalDuration, Math.max(dragState.initialEnd + deltaSeconds, dragState.initialStart + minSegment))
+        nextStart = dragState.initialStart
+      }
+
+      onUpdateTrackItem({ trackId: dragState.trackId, itemId: dragState.itemId, start: nextStart, end: nextEnd })
+    }
+
+    const handlePointerUp = () => {
+      setDragState(null)
+      setDraggingItem(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [dragState, onUpdateTrackItem, pxPerSecond, scaleRatio, duration])
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isScrubbingRef.current) return
+      handleSeek(event.clientX)
+    }
+
+    const handlePointerUp = () => {
+      isScrubbingRef.current = false
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [handleSeek])
+
+  const handlePointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      const target = event.target as HTMLElement
+      const role = target.dataset.role
+      if (role === 'track-item' || role === 'track-handle') {
+        return
+      }
+      isScrubbingRef.current = true
+      handleSeek(event.clientX)
+    },
+    [handleSeek],
+  )
+
   return (
     <div ref={containerRef} className="relative rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/60 w-full">
-      <div className="relative mx-auto" style={{ width: renderedWidth }}>
+      <div
+        className="relative mx-auto"
+        style={{ width: renderedWidth }}
+        onPointerDownCapture={handlePointerDownCapture}
+      >
         <Player
           ref={playerRef}
           component={TimelineComposition}
-          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond, thumbnailMap }}
+          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond, thumbnailMap, draggingItem, onBeginDrag: onUpdateTrackItem ? handleBeginDrag : undefined }}
           durationInFrames={durationInFrames}
           compositionWidth={Math.ceil(totalWidth)}
           compositionHeight={totalHeight}
@@ -488,23 +683,6 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
           doubleClickToFullscreen={false}
           style={{ width: renderedWidth, height: totalHeight }}
           className="select-none"
-        />
-        <div
-          ref={overlayRef}
-          className="absolute inset-0 cursor-pointer"
-          onPointerDown={(event) => {
-            event.preventDefault()
-            overlayRef.current?.setPointerCapture(event.pointerId)
-            handleSeek(event.clientX)
-          }}
-          onPointerMove={(event) => {
-            if (event.buttons & 1) {
-              handleSeek(event.clientX)
-            }
-          }}
-          onPointerUp={(event) => {
-            overlayRef.current?.releasePointerCapture(event.pointerId)
-          }}
         />
       </div>
     </div>

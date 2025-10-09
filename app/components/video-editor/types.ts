@@ -75,4 +75,10 @@ export type VideoEditorProps = {
   onRemoveVideo?: () => void
   onDurationChange?: (duration: number) => void
   onSeek?: (seconds: number) => void
+  onUpdateTrackItem?: (params: {
+    trackId: string
+    itemId: string
+    start?: number
+    end?: number
+  }) => void
 }

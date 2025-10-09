@@ -14,6 +14,12 @@ type TimelineProps = {
   fps: number
   zoom: number
   onZoomChange: (value: number) => void
+  onUpdateTrackItem?: (params: {
+    trackId: string
+    itemId: string
+    start?: number
+    end?: number
+  }) => void
 }
 
 const formatTime = (seconds: number) => {
@@ -23,7 +29,7 @@ const formatTime = (seconds: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onTogglePlay, fps, zoom, onZoomChange }: TimelineProps) {
+export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onTogglePlay, fps, zoom, onZoomChange, onUpdateTrackItem }: TimelineProps) {
   
   return (
     <section className="bg-slate-950/90 border-t border-slate-800">
@@ -52,16 +58,18 @@ export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onT
             />
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span>Cà chọ</span>
-          <input type="range" min={0} max={100} defaultValue={24} className="w-24" />
-          <span>Góc chọ</span>
-          <input type="range" min={0} max={100} defaultValue={0} className="w-24" />
-        </div>
       </div>
 
       <div className="px-6 pb-6 space-y-6">
-        <RemotionTimeline tracks={tracks} duration={duration} currentTime={currentTime} fps={fps} zoom={zoom} onSeek={onSeek} />
+        <RemotionTimeline
+          tracks={tracks}
+          duration={duration}
+          currentTime={currentTime}
+          fps={fps}
+          zoom={zoom}
+          onSeek={onSeek}
+          onUpdateTrackItem={onUpdateTrackItem}
+        />
 
         <div className="flex items-center justify-between text-sm text-slate-300">
           <div className="flex items-center gap-2">
