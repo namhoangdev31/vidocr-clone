@@ -551,7 +551,7 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
         const next: Record<string, string[]> = {}
         for (const [trackId, images] of entries) {
           if (images && images.length) {
-            next[trackId] = images
+            next[trackId] = images as string[]
           }
         }
         return next

@@ -38,17 +38,11 @@ export function EditorHeader({ info }: HeaderProps) {
       <div className="flex items-center gap-4">
         <AvatarStack avatars={info.avatars} />
         <div className="flex flex-col">
-          <span className="text-xs uppercase tracking-wider text-slate-400">{info.episodeName || 'Current Project'}</span>
-          <span className="text-lg font-semibold text-white">{info.projectTitle}</span>
+          <span className="text-xs uppercase tracking-wider text-slate-400">Current Project</span>
           {info.fileName && (
             <span className="text-sm text-slate-400">{info.fileName}</span>
           )}
         </div>
-        {info.statusTag && (
-          <span className="ml-2 px-3 py-1 rounded-full bg-slate-800 text-xs font-medium text-slate-200">
-            {info.statusTag}
-          </span>
-        )}
       </div>
 
       <div className="flex items-center gap-3">
