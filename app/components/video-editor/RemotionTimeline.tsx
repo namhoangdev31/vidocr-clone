@@ -209,27 +209,32 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
             </div>
 
             <div style={{ position: 'absolute', top: MARKER_HEIGHT, left: 0, right: 0, height: totalRowsHeight }}>
-                {tracks.map((track, index) => {
-                  const top = index * (ROW_HEIGHT + ROW_GAP)
-                  const isThumbnailTrack = Boolean(
-                    track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length > 0,
-                  )
-                  const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
-                  return (
-                    <div
-                      key={`${track.id}-timeline-row`}
-                      style={{
-                        position: 'absolute',
-                        top,
-                        left: 0,
-                        right: 0,
-                        height: ROW_HEIGHT,
-                        borderRadius: 10,
-                        background: isThumbnailTrack ? 'rgba(15, 23, 42, 0.35)' : 'rgba(30, 41, 59, 0.55)',
-                        border: '1px solid rgba(148, 163, 184, 0.18)',
-                        overflow: 'hidden',
-                      }}
-                    >
+              {tracks.map((track, index) => {
+                const top = index * (ROW_HEIGHT + ROW_GAP)
+                const isThumbnailTrack = Boolean(
+                  track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length > 0,
+                )
+                const isTextTrack = track.type === 'text'
+                const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
+                return (
+                  <div
+                    key={`${track.id}-timeline-row`}
+                    style={{
+                      position: 'absolute',
+                      top,
+                      left: 0,
+                      right: 0,
+                      height: ROW_HEIGHT,
+                      borderRadius: 10,
+                      background: isThumbnailTrack
+                        ? 'rgba(15, 23, 42, 0.35)'
+                        : isTextTrack
+                        ? 'rgba(99, 102, 241, 0.18)'
+                        : 'rgba(30, 41, 59, 0.55)',
+                      border: '1px solid rgba(148, 163, 184, 0.18)',
+                      overflow: 'hidden',
+                    }}
+                  >
                       {isThumbnailTrack && (
                         <div
                           style={{
@@ -290,16 +295,20 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({ tracks, durat
                                 top: 4,
                                 bottom: 4,
                                 borderRadius: 8,
-                                background: item.color,
+                                background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color,
                                 boxShadow: '0 8px 18px rgba(15, 23, 42, 0.45)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: '#0f172a',
-                                textTransform: 'uppercase',
-                                letterSpacing: 0.4,
+                                justifyContent: isTextTrack ? 'flex-start' : 'center',
+                                fontSize: isTextTrack ? 12 : 11,
+                                fontWeight: isTextTrack ? 500 : 600,
+                                color: isTextTrack ? '#ede9fe' : '#0f172a',
+                                textTransform: isTextTrack ? 'none' : 'uppercase',
+                                letterSpacing: isTextTrack ? 0 : 0.4,
+                                padding: isTextTrack ? '0 12px' : undefined,
+                                overflow: 'hidden',
+                                whiteSpace: isTextTrack ? 'nowrap' : undefined,
+                                textOverflow: isTextTrack ? 'ellipsis' : undefined,
                               }}
                             >
                               {item.label}

@@ -210,7 +210,27 @@ export default function VideoEditorPage() {
   }
 
   useEffect(() => {
+    const textTrackItems = DEFAULT_TRANSCRIPTS
+      .map((entry, index) => ({
+        id: `transcript-${index}`,
+        label: entry.primaryText.length > 42 ? `${entry.primaryText.slice(0, 39)}…` : entry.primaryText,
+        start: entry.start,
+        end: entry.end,
+        color: '#6366f1',
+      }))
+      .sort((a, b) => a.start - b.start)
+
     if (!videoSource || !videoSource.url) {
+      setTracks((prev) =>
+        prev.map((track) =>
+          track.type === 'text'
+            ? {
+                ...track,
+                items: textTrackItems,
+              }
+            : track,
+        ),
+      )
       return
     }
 
@@ -233,22 +253,32 @@ export default function VideoEditorPage() {
 
     setTracks((prev) =>
       prev.map((track) => {
-        if (track.type !== 'image') return track
-        return {
-          ...track,
-          resourceName: videoSource.name ?? track.resourceName,
-          assetSrc: videoSource.url,
-          fps,
-          thumbnails,
-          items: track.items.map((item, idx) =>
-            idx === 0
-              ? {
-                  ...item,
-                  end: totalDuration,
-                }
-              : item,
-          ),
+        if (track.type === 'text') {
+          return {
+            ...track,
+            items: textTrackItems,
+          }
         }
+
+        if (track.type === 'image') {
+          return {
+            ...track,
+            resourceName: videoSource.name ?? track.resourceName,
+            assetSrc: videoSource.url,
+            fps,
+            thumbnails,
+            items: track.items.map((item, idx) =>
+              idx === 0
+                ? {
+                    ...item,
+                    end: totalDuration,
+                  }
+                : item,
+            ),
+          }
+        }
+
+        return track
       }),
     )
   }, [videoSource, timelineDuration])
