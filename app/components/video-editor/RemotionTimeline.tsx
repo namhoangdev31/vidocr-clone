@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Player, PlayerRef } from '@remotion/player'
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
 import { TimelineTrack } from './types'
@@ -225,10 +225,45 @@ type RemotionTimelineProps = {
 export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek }: RemotionTimelineProps) {
   const playerRef = useRef<PlayerRef>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(1024)
 
   const safeFps = Math.max(1, Math.round(fps))
-  const pxPerSecond = useMemo(() => BASE_PIXEL_PER_SECOND * Math.max(0.4, zoom / 40), [zoom])
-  const timelineWidth = Math.max(1, duration) * pxPerSecond
+  const paddingWidth = LABEL_WIDTH + PADDING_X * 2
+
+  useEffect(() => {
+    const update = () => {
+      if (!containerRef.current) return
+      const width = containerRef.current.clientWidth
+      if (width > 0) {
+        setContainerWidth(width)
+      }
+    }
+
+    update()
+
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      const observer = new ResizeObserver(() => update())
+      observer.observe(containerRef.current)
+      return () => observer.disconnect()
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', update)
+      return () => window.removeEventListener('resize', update)
+    }
+
+    return undefined
+  }, [])
+
+  const availableTimelineWidth = Math.max(240, containerWidth - paddingWidth)
+  const basePxPerSecond = duration > 0 ? availableTimelineWidth / duration : availableTimelineWidth
+  const pxPerSecond = useMemo(() => {
+    const zoomFactor = Math.max(0.5, Math.min(zoom / 40, 1))
+    return basePxPerSecond * zoomFactor
+  }, [basePxPerSecond, zoom])
+
+  const timelineWidth = duration > 0 ? pxPerSecond * duration : availableTimelineWidth
   const totalRowsHeight = tracks.length > 0 ? tracks.length * ROW_HEIGHT + Math.max(0, tracks.length - 1) * ROW_GAP : ROW_HEIGHT
   const totalHeight = MARKER_HEIGHT + totalRowsHeight + PADDING_Y * 2
   const totalWidth = LABEL_WIDTH + timelineWidth + PADDING_X * 2
@@ -254,45 +289,43 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
   )
 
   return (
-    <div className="relative rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/60">
-      <div className="overflow-x-auto">
-        <div className="relative" style={{ width: totalWidth }}>
-          <Player
-            ref={playerRef}
-            component={TimelineComposition}
-            inputProps={{ tracks, durationInSeconds: duration, pxPerSecond }}
-            durationInFrames={durationInFrames}
-            compositionWidth={Math.ceil(totalWidth)}
-            compositionHeight={totalHeight}
-            fps={safeFps}
-            controls={false}
-            loop={false}
-            autoPlay={false}
-            showVolumeControls={false}
-            clickToPlay={false}
-            allowFullscreen={false}
-            doubleClickToFullscreen={false}
-            style={{ width: totalWidth, height: totalHeight }}
-            className="select-none"
-          />
-          <div
-            ref={overlayRef}
-            className="absolute inset-0 cursor-pointer"
-            onPointerDown={(event) => {
-              event.preventDefault()
-              overlayRef.current?.setPointerCapture(event.pointerId)
+    <div ref={containerRef} className="relative rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/60 w-full">
+      <div className="relative mx-auto" style={{ width: Math.min(totalWidth, containerWidth) }}>
+        <Player
+          ref={playerRef}
+          component={TimelineComposition}
+          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond }}
+          durationInFrames={durationInFrames}
+          compositionWidth={Math.ceil(totalWidth)}
+          compositionHeight={totalHeight}
+          fps={safeFps}
+          controls={false}
+          loop={false}
+          autoPlay={false}
+          showVolumeControls={false}
+          clickToPlay={false}
+          allowFullscreen={false}
+          doubleClickToFullscreen={false}
+          style={{ width: Math.min(totalWidth, containerWidth), height: totalHeight }}
+          className="select-none"
+        />
+        <div
+          ref={overlayRef}
+          className="absolute inset-0 cursor-pointer"
+          onPointerDown={(event) => {
+            event.preventDefault()
+            overlayRef.current?.setPointerCapture(event.pointerId)
+            handleSeek(event.clientX)
+          }}
+          onPointerMove={(event) => {
+            if (event.buttons & 1) {
               handleSeek(event.clientX)
-            }}
-            onPointerMove={(event) => {
-              if (event.buttons & 1) {
-                handleSeek(event.clientX)
-              }
-            }}
-            onPointerUp={(event) => {
-              overlayRef.current?.releasePointerCapture(event.pointerId)
-            }}
-          />
-        </div>
+            }
+          }}
+          onPointerUp={(event) => {
+            overlayRef.current?.releasePointerCapture(event.pointerId)
+          }}
+        />
       </div>
     </div>
   )
