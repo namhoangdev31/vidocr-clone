@@ -20,6 +20,7 @@ type TimelineProps = {
     start?: number
     end?: number
   }) => void
+  onDeleteTrackItem?: (params: { trackId: string; itemId: string }) => void
 }
 
 const formatTime = (seconds: number) => {
@@ -29,7 +30,7 @@ const formatTime = (seconds: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onTogglePlay, fps, zoom, onZoomChange, onUpdateTrackItem }: TimelineProps) {
+export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onTogglePlay, fps, zoom, onZoomChange, onUpdateTrackItem, onDeleteTrackItem }: TimelineProps) {
   
   return (
     <section className="bg-slate-950/90 border-t border-slate-800">
@@ -69,6 +70,7 @@ export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onT
           zoom={zoom}
           onSeek={onSeek}
           onUpdateTrackItem={onUpdateTrackItem}
+          onDeleteTrackItem={onDeleteTrackItem}
         />
 
         <div className="flex items-center justify-between text-sm text-slate-300">

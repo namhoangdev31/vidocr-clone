@@ -21,6 +21,8 @@ export function VideoEditor({
   onDurationChange,
   onSeek,
   onUpdateTrackItem,
+  onApplyTranscripts,
+  onDeleteTrackItem,
 }: VideoEditorProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -154,6 +156,7 @@ export function VideoEditor({
                 onEnded={handleEnded}
                 onUpload={onUpload}
                 onRemove={onRemoveVideo}
+                transcripts={transcripts}
               />
             </div>
 
@@ -173,7 +176,7 @@ export function VideoEditor({
             </div>
           </div>
 
-          <TranscriptPanel entries={transcripts} currentTime={currentTime} onSeek={handleSeek} height={centerHeight} />
+          <TranscriptPanel entries={transcripts} currentTime={currentTime} onSeek={handleSeek} height={centerHeight} onApplyTranscripts={onApplyTranscripts} />
         </div>
 
         <Timeline
@@ -187,6 +190,7 @@ export function VideoEditor({
           zoom={zoom}
           onZoomChange={setZoom}
           onUpdateTrackItem={onUpdateTrackItem}
+          onDeleteTrackItem={onDeleteTrackItem}
         />
       </div>
     </div>

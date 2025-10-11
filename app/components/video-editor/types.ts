@@ -81,4 +81,6 @@ export type VideoEditorProps = {
     start?: number
     end?: number
   }) => void
+  onDeleteTrackItem?: (params: { trackId: string; itemId: string }) => void
+  onApplyTranscripts?: (entries: TranscriptEntry[]) => void
 }

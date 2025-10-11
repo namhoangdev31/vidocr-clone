@@ -1,6 +1,7 @@
-'use client'
+ 'use client'
 
 import { RefObject } from 'react'
+import { TranscriptEntry } from './types'
 import { Pause, Play, UploadCloud, Volume2, X } from 'lucide-react'
 import { UploadDropzone } from './UploadDropzone'
 import { VideoSource } from './types'
@@ -18,6 +19,7 @@ type VideoPlayerProps = {
   onEnded: () => void
   onUpload: (file: File) => void
   onRemove?: () => void
+  transcripts?: TranscriptEntry[]
 }
 
 const formatTime = (value: number) => {
@@ -40,6 +42,7 @@ export function VideoPlayer({
   onEnded,
   onUpload,
   onRemove,
+  transcripts,
 }: VideoPlayerProps) {
   if (!videoSource) {
     return (
@@ -62,6 +65,22 @@ export function VideoPlayer({
         onEnded={onEnded}
         preload="metadata"
       />
+
+      {/* Subtitle overlay */}
+      {transcripts && transcripts.length > 0 && (
+        <div className="pointer-events-none absolute left-1/2 transform -translate-x-1/2 bottom-20 max-w-[80%] text-center">
+          {(() => {
+            const active = transcripts.find((t) => currentTime >= t.start && currentTime <= t.end)
+            if (!active) return null
+            return (
+              <div className="bg-black/60 px-4 py-2 rounded-md text-white">
+                <div className="text-sm font-medium leading-tight">{active.primaryText}</div>
+                {active.secondaryText && <div className="text-xs text-slate-200 mt-1">{active.secondaryText}</div>}
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
 

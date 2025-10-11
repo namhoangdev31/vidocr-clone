@@ -338,32 +338,14 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   }
 
   useEffect(() => {
-    const baseTextItems = DEFAULT_TRANSCRIPTS
-      .map((entry, index) => ({
-        id: `transcript-${index}`,
-        label: entry.primaryText.length > 42 ? `${entry.primaryText.slice(0, 39)}…` : entry.primaryText,
-        start: entry.start,
-        end: entry.end,
-        color: '#6366f1',
-      }))
-      .sort((a, b) => a.start - b.start)
+    // Do not populate text track with sample/default transcript items automatically.
+    // Keep text track empty by default and avoid setting transcripts from DEFAULT_TRANSCRIPTS.
 
     if (!videoSource || !videoSource.url) {
-      setTracks((prev) => {
-        const nextTracks = prev.map((track) =>
-          track.type === 'text'
-            ? {
-                ...track,
-                items: baseTextItems,
-              }
-            : track,
-        )
-        // Don't override transcripts if we have API data
-        if (!hasApiTranscripts) {
-        setTranscripts(deriveTranscripts(nextTracks))
-        }
-        return nextTracks
-      })
+      // Ensure text track remains empty when there's no video loaded
+      setTracks((prev) =>
+        prev.map((track) => (track.type === 'text' ? { ...track, items: [] } : track)),
+      )
       return
     }
 
@@ -389,7 +371,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         if (track.type === 'text') {
           return {
             ...track,
-            items: baseTextItems,
+            items: [],
           }
         }
 
@@ -667,6 +649,25 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
           setVideoSource((prev) => (prev ? { ...prev, duration } : prev))
         }}
         onUpdateTrackItem={handleUpdateTrackItem}
+        onApplyTranscripts={(entries) => {
+          // Convert transcript entries to timeline items and replace text track items
+          setTracks((prev) =>
+            prev.map((track) =>
+              track.type === 'text'
+                ? {
+                    ...track,
+                    items: entries.map((t, idx) => ({
+                      id: t.id || `transcript-${idx}`,
+                      label: t.primaryText.length > 42 ? `${t.primaryText.slice(0, 39)}…` : t.primaryText,
+                      start: t.start,
+                      end: t.end,
+                      color: '#6366f1',
+                    })),
+                  }
+                : track,
+            ),
+          )
+        }}
       />
     </div>
   )

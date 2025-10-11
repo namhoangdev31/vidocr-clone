@@ -113,6 +113,9 @@ type TimelineCompositionProps = {
     end: number
     isTextTrack: boolean
   }) => void
+  onSeek?: (seconds: number) => void
+  onSelect?: (trackId: string, itemId: string) => void
+  selected?: { trackId: string; itemId: string } | null
 }
 
 const TimelineComposition: React.FC<TimelineCompositionProps> = ({
@@ -122,6 +125,9 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({
   thumbnailMap,
   draggingItem,
   onBeginDrag,
+  onSeek,
+  onSelect,
+  selected,
 }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -307,6 +313,7 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({
                                 draggingItem.trackId === track.id &&
                                 draggingItem.itemId === item.id,
                             )
+                          const isSelected = Boolean(selected && selected.trackId === track.id && selected.itemId === item.id)
 
                           const beginDrag = (mode: DragState['mode']) => (event: ReactPointerEvent) => {
                             if (!onBeginDrag || track.type !== 'text') return
@@ -323,10 +330,22 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({
                             })
                           }
 
-                          return (
-                            <div
-                              key={item.id}
-                              onPointerDown={isTextTrack ? beginDrag('move') : undefined}
+                                    return (
+                                      <div
+                                        key={item.id}
+                                        // don't start a move-drag when pressing the item body; only start drag from handles
+                                        // onPointerDown={isTextTrack ? beginDrag('move') : undefined}
+                                        onPointerUp={
+                                          isTextTrack
+                                            ? (e) => {
+                                                // if this item is currently being actively dragged, don't treat this as a click/select
+                                                if (!draggingItem || draggingItem.trackId !== track.id || draggingItem.itemId !== item.id) {
+                                                  if (onSelect) onSelect(track.id, item.id)
+                                                  if (onSeek) onSeek(item.start)
+                                                }
+                                              }
+                                            : undefined
+                                        }
                               data-role={isTextTrack ? 'track-item' : undefined}
                               style={{
                                 position: 'absolute',
@@ -335,10 +354,12 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({
                                 top: 4,
                                 bottom: 4,
                                 borderRadius: 8,
-                                background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color,
-                                boxShadow: isCurrentDragging
-                                  ? '0 0 0 2px rgba(56, 189, 248, 0.9)'
-                                  : '0 8px 18px rgba(15, 23, 42, 0.45)',
+                                        background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color,
+                                        boxShadow: isCurrentDragging
+                                          ? '0 0 0 2px rgba(56, 189, 248, 0.9)'
+                                          : '0 8px 18px rgba(15, 23, 42, 0.45)',
+                                        outline: isSelected ? '2px solid rgba(99, 102, 241, 0.95)' : undefined,
+                                        transform: isSelected ? 'translateY(-1px)' : undefined,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: isTextTrack ? 'flex-start' : 'center',
@@ -351,7 +372,7 @@ const TimelineComposition: React.FC<TimelineCompositionProps> = ({
                                 overflow: 'hidden',
                                 whiteSpace: isTextTrack ? 'nowrap' : undefined,
                                 textOverflow: isTextTrack ? 'ellipsis' : undefined,
-                                cursor: onBeginDrag && isTextTrack ? (isCurrentDragging ? 'grabbing' : 'grab') : 'default',
+                                cursor: isTextTrack ? (isCurrentDragging ? 'grabbing' : 'pointer') : 'default',
                                 userSelect: 'none',
                                 zIndex: isTextTrack ? 2 : 1,
                               }}
@@ -428,6 +449,7 @@ type RemotionTimelineProps = {
     start?: number
     end?: number
   }) => void
+  onDeleteTrackItem?: (params: { trackId: string; itemId: string }) => void
 }
 
 type DragState = {
@@ -439,7 +461,19 @@ type DragState = {
   initialEnd: number
 }
 
-export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek, onUpdateTrackItem }: RemotionTimelineProps) {
+export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek, onUpdateTrackItem, onDeleteTrackItem }: RemotionTimelineProps) {
+  const [selected, setSelected] = useState<{ trackId: string; itemId: string } | null>(null)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && onDeleteTrackItem) {
+        onDeleteTrackItem(selected)
+        setSelected(null)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selected, onDeleteTrackItem])
   const playerRef = useRef<PlayerRef>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const thumbnailCacheRef = useRef(new Map<string, string[]>())
@@ -669,7 +703,17 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
         <Player
           ref={playerRef}
           component={TimelineComposition}
-          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond, thumbnailMap, draggingItem, onBeginDrag: onUpdateTrackItem ? handleBeginDrag : undefined }}
+          inputProps={{
+            tracks,
+            durationInSeconds: duration,
+            pxPerSecond,
+            thumbnailMap,
+            draggingItem,
+            onBeginDrag: onUpdateTrackItem ? handleBeginDrag : undefined,
+            onSeek,
+            onSelect: (trackId: string, itemId: string) => setSelected({ trackId, itemId }),
+            selected,
+          }}
           durationInFrames={durationInFrames}
           compositionWidth={Math.ceil(totalWidth)}
           compositionHeight={totalHeight}

@@ -7,6 +7,7 @@ type TranscriptPanelProps = {
   currentTime: number
   onSeek: (seconds: number) => void
   height?: number | null
+  onApplyTranscripts?: (entries: TranscriptEntry[]) => void
 }
 
 const formatRange = (start: number, end: number) => {
@@ -19,7 +20,7 @@ const formatRange = (start: number, end: number) => {
   return `${toLabel(start)} - ${toLabel(end)}`
 }
 
-export function TranscriptPanel({ entries, currentTime, onSeek, height }: TranscriptPanelProps) {
+export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyTranscripts }: TranscriptPanelProps) {
   const style: React.CSSProperties | undefined = height ? { height: `${height}px` } : undefined
 
   return (
@@ -53,6 +54,15 @@ export function TranscriptPanel({ entries, currentTime, onSeek, height }: Transc
             </button>
           )
         })}
+      </div>
+      <div className="px-4 py-3 border-t border-slate-800 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => onApplyTranscripts?.(entries)}
+          className="w-full py-2 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-sm"
+        >
+          Áp dụng lên timeline
+        </button>
       </div>
     </aside>
   )
