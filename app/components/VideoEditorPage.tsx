@@ -140,6 +140,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   const [renderProgress, setRenderProgress] = useState(0)
   const [renderStatus, setRenderStatus] = useState<string | undefined>()
   const [outputUrl, setOutputUrl] = useState<string | null>(null)
+  const [outputExt, setOutputExt] = useState<string | null>(null)
   const renderAbortRef = useRef<{ abort: () => void } | null>(null)
 
   useEffect(() => {
@@ -354,15 +355,240 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     URL.revokeObjectURL(url)
   }
 
+  // After initial render (WebM), optionally transcode/remux to target container/codec using ffmpeg.wasm
+  const transcodeOrRemux = async (
+    inputBlob: Blob,
+    settings: ExportSettings
+  ): Promise<{ blob: Blob; ext: string }> => {
+    const targetFormat = settings.format
+    // If input already matches desired container, skip transcoding
+    const type = (inputBlob.type || '').toLowerCase()
+    if (targetFormat === 'MP4' && (type.includes('mp4') || type.includes('video/quicktime'))) {
+      return { blob: inputBlob, ext: 'mp4' }
+    }
+    if (targetFormat === 'MOV' && type.includes('video/quicktime')) {
+      return { blob: inputBlob, ext: 'mov' }
+    }
+    if (targetFormat === 'MKV' && (type.includes('matroska') || type.includes('x-matroska'))) {
+      return { blob: inputBlob, ext: 'mkv' }
+    }
+    // If user wants WebM-like (we don't have WebM option in UI), keep original; otherwise use ffmpeg
+    if (targetFormat === 'MKV') {
+      // Fast remux from webm to mkv (copy streams)
+      try {
+        const ffmpeg = new FFmpeg()
+        ffmpeg.on('progress', ({ progress }) => setRenderProgress(Math.max(0.01, Math.min(1, progress ?? 0))))
+        await ffmpeg.load()
+        const inName = 'in.webm'
+        const outName = 'out.mkv'
+        const buf = new Uint8Array(await inputBlob.arrayBuffer())
+        await ffmpeg.writeFile(inName, buf)
+        await ffmpeg.exec(['-i', inName, '-c', 'copy', outName])
+  const data = await ffmpeg.readFile(outName)
+  const u8 = typeof data === 'string' ? new TextEncoder().encode(data) : (data as Uint8Array)
+  const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
+  return { blob: new Blob([ab], { type: 'video/x-matroska' }), ext: 'mkv' }
+      } catch (e) {
+        // Fallback to original
+        console.warn('Remux MKV failed, falling back to webm:', e)
+        return { blob: inputBlob, ext: 'webm' }
+      }
+    }
+
+    if (targetFormat === 'MOV' || targetFormat === 'MP4') {
+      try {
+        const ffmpeg = new FFmpeg()
+        ffmpeg.on('progress', ({ progress }) => {
+          setRenderStatus('Đang chuyển định dạng…')
+          setRenderProgress(Math.max(0.02, Math.min(1, progress ?? 0)))
+        })
+        await ffmpeg.load()
+        const inName = 'in.webm'
+        const outName = targetFormat === 'MP4' ? 'out.mp4' : 'out.mov'
+        const buf = new Uint8Array(await inputBlob.arrayBuffer())
+        await ffmpeg.writeFile(inName, buf)
+
+        const fps = settings.framerate === 'Auto' ? undefined : Number(settings.framerate)
+        const height = (() => {
+          switch (settings.resolution) {
+            case '2160p': return 2160
+            case '1440p': return 1440
+            case '1080p': return 1080
+            case '720p': return 720
+            case '480p': return 480
+            default: return undefined
+          }
+        })()
+        const crf = settings.bitrate === 'Cao' ? 18 : settings.bitrate === 'Thấp' ? 28 : 23
+        const args = ['-i', inName]
+        if (height) { args.push('-vf', `scale=-2:${height}`) }
+        if (fps) { args.push('-r', String(fps)) }
+        // Prefer H.264 + AAC in both MP4 and MOV containers
+        args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-c:a', 'aac', '-b:a', '128k')
+        // Faststart for mp4 streaming
+        if (targetFormat === 'MP4') args.push('-movflags', 'faststart')
+        args.push(outName)
+
+        await ffmpeg.exec(args)
+  const data = await ffmpeg.readFile(outName)
+  const u8 = typeof data === 'string' ? new TextEncoder().encode(data) : (data as Uint8Array)
+  const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
+        const type = targetFormat === 'MP4' ? 'video/mp4' : 'video/quicktime'
+        return { blob: new Blob([ab], { type }), ext: targetFormat.toLowerCase() }
+      } catch (e) {
+        console.warn('Transcode to MP4/MOV failed, falling back to webm:', e)
+        return { blob: inputBlob, ext: 'webm' }
+      }
+    }
+
+    // Default: keep original webm
+    return { blob: inputBlob, ext: 'webm' }
+  }
+
+  // Helpers to map className/style from VideoSmallTool to canvas paint
+  const parseTailwindColor = (token?: string): string | undefined => {
+    if (!token) return undefined
+    const map: Record<string, string> = {
+      'text-white': '#ffffff',
+      'text-black': '#000000',
+      'text-slate-200': '#e2e8f0',
+      'text-emerald-400': '#34d399',
+      'text-orange-400': '#fb923c',
+      'text-pink-500': '#ec4899',
+      'text-yellow-900': '#713f12',
+      'bg-black': '#000000',
+      'bg-white': '#ffffff',
+      'bg-slate-800': '#1f2937',
+      'bg-violet-600': '#7c3aed',
+      'bg-yellow-300': '#fde047',
+      'bg-sky-600': '#0284c7',
+    }
+    return map[token]
+  }
+
+  const extractColorsFromClassName = (className?: string) => {
+    const tokens = (className || '').split(/\s+/).filter(Boolean)
+    const bgToken = tokens.find((t) => t.startsWith('bg-'))
+    const textToken = tokens.find((t) => t.startsWith('text-'))
+    // handle opacity modifier like bg-slate-800/80
+    let bgOpacity = 1
+    let baseBgToken = bgToken
+    const m = bgToken?.match(/^(bg-[^/]+)\/(\d{1,3})$/)
+    if (m) { baseBgToken = m[1]; bgOpacity = Math.min(1, Math.max(0, Number(m[2]) / 100)) }
+    const bgHex = parseTailwindColor(baseBgToken)
+    const textHex = parseTailwindColor(textToken)
+    const hexToRgba = (hex?: string, alpha = 1) => {
+      if (!hex) return undefined
+      const v = hex.replace('#', '')
+      const bigint = parseInt(v, 16)
+      const r = (bigint >> 16) & 255
+      const g = (bigint >> 8) & 255
+      const b = bigint & 255
+      return `rgba(${r},${g},${b},${alpha})`
+    }
+    return { bg: hexToRgba(bgHex, bgOpacity), text: hexToRgba(textHex, 1) }
+  }
+
+  const parseTextShadow = (shadow?: string) => {
+    if (!shadow) return undefined
+    // only take the first pattern: offsetX offsetY blur color
+    const first = shadow.split(',')[0].trim()
+    const parts = first.match(/(-?\d+)px\s+(-?\d+)px(?:\s+(\d+)px)?\s+(.*)$/)
+    if (!parts) return undefined
+    const [, ox, oy, blur, color] = parts
+    return { ox: Number(ox), oy: Number(oy), blur: Number(blur || 0), color: color?.trim() || 'rgba(0,0,0,0.7)' }
+  }
+
+  const drawSubtitle = (
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    meta: any,
+    targetW: number,
+    targetH: number,
+  ) => {
+    const fontSize = Number(meta?.fontSize) || 32
+    const angle = Number(meta?.angle) || 0
+    const { bg, text: fillColor } = extractColorsFromClassName(meta?.className)
+    const shadow = parseTextShadow(meta?.style?.textShadow)
+    const strokeStyle = shadow?.color || 'rgba(0,0,0,0.8)'
+    const lineWidth = Math.max(2, Math.floor(fontSize / 8))
+
+    ctx.save()
+    ctx.font = `${Math.max(10, fontSize)}px ui-sans-serif, system-ui, -apple-system`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    const x = targetW / 2
+    const y = targetH - Math.round(targetH * 0.12)
+    if (angle !== 0) { ctx.translate(x, y); ctx.rotate((angle * Math.PI) / 180); ctx.translate(-x, -y) }
+
+    // Background rounded rect based on measured width
+    const metrics = ctx.measureText(text)
+    const textWidth = metrics.width
+    const padX = fontSize * 0.6
+    const padY = fontSize * 0.35
+    const rectW = textWidth + padX * 2
+    const rectH = fontSize + padY * 2
+    const rx = Math.round(fontSize * 0.25)
+    const left = Math.round(x - rectW / 2)
+    const top = Math.round(y - rectH + padY)
+    if (bg) {
+      ctx.beginPath()
+      const r = rx
+      const right = left + rectW
+      const bottom = top + rectH
+      ctx.moveTo(left + r, top)
+      ctx.lineTo(right - r, top)
+      ctx.quadraticCurveTo(right, top, right, top + r)
+      ctx.lineTo(right, bottom - r)
+      ctx.quadraticCurveTo(right, bottom, right - r, bottom)
+      ctx.lineTo(left + r, bottom)
+      ctx.quadraticCurveTo(left, bottom, left, bottom - r)
+      ctx.lineTo(left, top + r)
+      ctx.quadraticCurveTo(left, top, left + r, top)
+      ctx.closePath()
+      ctx.fillStyle = bg
+      ctx.fill()
+    }
+
+    // Shadow (approximate first layer only)
+    if (shadow) {
+      ctx.shadowColor = shadow.color
+      ctx.shadowBlur = shadow.blur
+      ctx.shadowOffsetX = shadow.ox
+      ctx.shadowOffsetY = shadow.oy
+    } else {
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 0
+    }
+
+    // Stroke for readability
+    ctx.lineWidth = lineWidth
+    ctx.strokeStyle = strokeStyle
+    ctx.strokeText(text, x, y)
+
+    // Fill
+    ctx.fillStyle = fillColor || '#ffffff'
+    ctx.fillText(text, x, y)
+
+    ctx.restore()
+  }
+
   // Canvas-based renderer that burns in text tracks and records audio
   const renderWithTracks = async (
     src: string,
     tks: TimelineTrack[],
-    opts: { fps?: number; width?: number; height?: number; onProgress?: (p: number) => void; onStatus?: (s: string) => void; signal?: AbortSignal }
+    opts: { fps?: number; width?: number; height?: number; onProgress?: (p: number) => void; onStatus?: (s: string) => void; signal?: AbortSignal; preferMp4?: boolean }
   ): Promise<Blob> => {
     const fps = opts.fps ?? (videoSource?.fps ?? 30)
     const onProgress = opts.onProgress ?? (() => {})
     const onStatus = opts.onStatus ?? (() => {})
+    // Guard: MediaRecorder must exist for this pathway
+    if (typeof (window as any).MediaRecorder === 'undefined') {
+      onStatus('Trình duyệt không hỗ trợ MediaRecorder để ghi hình từ canvas')
+      throw new Error('MediaRecorder is not supported in this browser')
+    }
     return new Promise<Blob>((resolve, reject) => {
       let aborted = false
       let recorder: MediaRecorder | null = null
@@ -418,20 +644,35 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         } catch {}
 
         // MediaRecorder
-        const mimeCandidates = [
+        const mimeCandidates: string[] = []
+        if (opts.preferMp4) {
+          mimeCandidates.push(
+            'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+            'video/mp4'
+          )
+        }
+        mimeCandidates.push(
           'video/webm;codecs=vp9,opus',
           'video/webm;codecs=vp8,opus',
           'video/webm',
-        ]
+        )
         let mime: string | undefined
         for (const m of mimeCandidates) {
           if ((window as any).MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break }
         }
         if (!mime) {
-          onStatus('Trình duyệt không hỗ trợ MediaRecorder dạng webm')
+          onStatus('Định dạng WebM không được hỗ trợ để ghi hình trên trình duyệt này')
         }
-  const chunks: BlobPart[] = []
-  recorder = new MediaRecorder(mixStream, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : undefined)
+        const chunks: BlobPart[] = []
+        try {
+          recorder = new MediaRecorder(
+            mixStream,
+            mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : undefined,
+          )
+        } catch (err) {
+          onStatus('Không thể khởi tạo MediaRecorder cho dòng ghi hình')
+          return reject(err)
+        }
   const textTrack = tks.find((t) => t.type === 'text')
         const durationSec = video.duration || timelineDuration
 
@@ -454,25 +695,8 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
             const item = textTrack.items.find((it) => current >= it.start && current <= it.end)
             if (item) {
               const meta: any = (item as any).meta || {}
-              const fontSize = Number(meta.fontSize) || 32
               const text = String(meta.fullText || item.label || '')
-              const angle = Number(meta.angle) || 0
-              ctx.save()
-              ctx.font = `${Math.max(10, fontSize)}px ui-sans-serif, system-ui, -apple-system`
-              ctx.textAlign = 'center'
-              ctx.fillStyle = '#ffffff'
-              ctx.strokeStyle = 'rgba(0,0,0,0.7)'
-              ctx.lineWidth = Math.max(2, Math.floor(fontSize / 8))
-              const x = targetW / 2
-              const y = targetH - Math.round(targetH * 0.12)
-              if (angle !== 0) {
-                ctx.translate(x, y)
-                ctx.rotate((angle * Math.PI) / 180)
-                ctx.translate(-x, -y)
-              }
-              ctx.strokeText(text, x, y)
-              ctx.fillText(text, x, y)
-              ctx.restore()
+              drawSubtitle(ctx, text, meta, targetW, targetH)
             }
           }
           if (!video.paused && !video.ended) {
@@ -586,21 +810,8 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
             const item = textTrack.items.find((it) => current >= it.start && current <= it.end)
             if (item) {
               const meta: any = (item as any).meta || {}
-              const fontSize = Number(meta.fontSize) || 32
               const text = String(meta.fullText || item.label || '')
-              const angle = Number(meta.angle) || 0
-              ctx.save()
-              ctx.font = `${Math.max(10, fontSize)}px ui-sans-serif, system-ui, -apple-system`
-              ctx.textAlign = 'center'
-              ctx.fillStyle = '#ffffff'
-              ctx.strokeStyle = 'rgba(0,0,0,0.7)'
-              ctx.lineWidth = Math.max(2, Math.floor(fontSize / 8))
-              const x = targetW / 2
-              const y = targetH - Math.round(targetH * 0.12)
-              if (angle !== 0) { ctx.translate(x, y); ctx.rotate((angle * Math.PI) / 180); ctx.translate(-x, -y) }
-              ctx.strokeText(text, x, y)
-              ctx.fillText(text, x, y)
-              ctx.restore()
+              drawSubtitle(ctx, text, meta, targetW, targetH)
             }
           }
 
@@ -704,8 +915,6 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   }
 
   useEffect(() => {
-    // Do not populate text track with sample/default transcript items automatically.
-    // Keep text track empty by default and avoid setting transcripts from DEFAULT_TRANSCRIPTS.
 
     if (!videoSource || !videoSource.url) {
       // Ensure text track remains empty when there's no video loaded
@@ -1087,14 +1296,32 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
           setIsRendering(false)
         }}
         outputUrl={outputUrl}
-        onDownloadOutput={outputUrl ? () => downloadFile(outputUrl, (lastExportSettings?.title || 'export') + '.webm') : undefined}
+        onDownloadOutput={outputUrl ? () => {
+          const base = (lastExportSettings?.title || 'export').replace(/\.(mp4|mov|mkv|webm)$/i, '')
+          const ext = outputExt || 'webm'
+          downloadFile(outputUrl, `${base}.${ext}`)
+        } : undefined}
         onPublish={async (s) => {
           setLastExportSettings(s)
           setOutputUrl(null)
+          setOutputExt(null)
           setIsRendering(true)
           setRenderProgress(0)
           setRenderStatus('Chuẩn bị render…')
           try {
+            if (!videoSource?.url) {
+              setRenderStatus('Chưa có video để xuất')
+              alert('Vui lòng tải hoặc chọn video trước khi xuất')
+              return
+            }
+            // Capability detection: need either WebCodecs or MediaRecorder
+            const canWebCodecs = typeof (window as any).VideoEncoder !== 'undefined'
+            const canMediaRecorder = typeof (window as any).MediaRecorder !== 'undefined'
+            if (!canWebCodecs && !canMediaRecorder) {
+              setRenderStatus('Trình duyệt không hỗ trợ xuất video (thiếu WebCodecs/MediaRecorder)')
+              alert('Thiết bị/trình duyệt của bạn không hỗ trợ xuất video trực tiếp. Hãy thử dùng Chrome/Edge phiên bản mới hoặc tải video về bằng Tải backup/SRT.')
+              return
+            }
             const ac = new AbortController()
             renderAbortRef.current = { abort: () => ac.abort() }
             const targetHeight = (() => {
@@ -1108,25 +1335,40 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
               }
             })()
             const fps = s.framerate === 'Auto' ? (videoSource?.fps ?? 30) : Number(s.framerate)
-            const canWebCodecs = typeof (window as any).VideoEncoder !== 'undefined'
-            const blob = await (canWebCodecs
-              ? renderWebCodecsWithTracks(
-                  videoSource?.url!,
-                  tracks,
-                  { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal }
-                )
-              : renderWithTracks(
-                  videoSource?.url!,
-                  tracks,
-                  { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal }
-                )
+            // Prefer MediaRecorder MP4 path if supported and target is MP4/MOV
+            let preferMp4 = false
+            if (typeof (window as any).MediaRecorder !== 'undefined' && (s.format === 'MP4' || s.format === 'MOV')) {
+              try {
+                preferMp4 = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2') || MediaRecorder.isTypeSupported('video/mp4')
+              } catch {}
+            }
+            const renderBlob = await (
+              (preferMp4 && typeof (window as any).MediaRecorder !== 'undefined')
+                ? renderWithTracks(
+                    videoSource?.url!,
+                    tracks,
+                    { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal, preferMp4: true }
+                  )
+                : canWebCodecs
+                  ? renderWebCodecsWithTracks(
+                      videoSource?.url!,
+                      tracks,
+                      { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal }
+                    )
+                  : renderWithTracks(
+                      videoSource?.url!,
+                      tracks,
+                      { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal }
+                    )
             )
+            // Convert/match to selected container/codec when feasible
+            const { blob, ext } = await transcodeOrRemux(renderBlob, s)
             const url = URL.createObjectURL(blob)
             setOutputUrl(url)
+            setOutputExt(ext)
             setRenderStatus('Hoàn tất. Đang tải xuống…')
             // Auto-download as soon as render finishes
             const filenameBase = s.title?.replace(/\.(mp4|mov|mkv)$/i, '') || 'export'
-            const ext = 'webm'
             downloadFile(url, `${filenameBase}.${ext}`)
             // Optionally keep the dialog open; user can close it after download
           } catch (e: any) {
