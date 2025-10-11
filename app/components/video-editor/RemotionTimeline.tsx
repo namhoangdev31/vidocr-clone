@@ -377,13 +377,22 @@ export function RemotionTimeline({
             const images = await generateVideoThumbnails(track.assetSrc, specs)
             if (!cancelled && images.length) thumbnailCacheRef.current.set(cacheKey, { specs, images })
             return [track.id, { specs, images }] as const
-          } catch { return [track.id, []] as const }
+          } catch {
+            // Don't clear existing thumbnails on error; keep previous
+            return [track.id, undefined] as const
+          }
         }))
 
         if (cancelled) return
-        setThumbnailMap(() => {
-          const next: Record<string, { specs: ThumbnailSpec[]; images: string[] }> = {}
-          for (const [trackId, entry] of entries) if (entry && (entry as any).images && (entry as any).images.length) next[trackId] = entry as { specs: ThumbnailSpec[]; images: string[] }
+        setThumbnailMap((prev) => {
+          // Merge with previous to avoid flicker while new thumbs are generating
+          const next: Record<string, { specs: ThumbnailSpec[]; images: string[] }> = { ...prev }
+          for (const [trackId, entry] of entries) {
+            if (entry && (entry as any).images && (entry as any).images.length) {
+              next[trackId] = entry as { specs: ThumbnailSpec[]; images: string[] }
+            }
+            // If entry is undefined or empty, keep existing prev[trackId]
+          }
           return next
         })
       }
