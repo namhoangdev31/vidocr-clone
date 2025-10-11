@@ -6,6 +6,7 @@ type TranscriptPanelProps = {
   entries: TranscriptEntry[]
   currentTime: number
   onSeek: (seconds: number) => void
+  height?: number | null
 }
 
 const formatRange = (start: number, end: number) => {
@@ -18,9 +19,12 @@ const formatRange = (start: number, end: number) => {
   return `${toLabel(start)} - ${toLabel(end)}`
 }
 
-export function TranscriptPanel({ entries, currentTime, onSeek }: TranscriptPanelProps) {
+export function TranscriptPanel({ entries, currentTime, onSeek, height }: TranscriptPanelProps) {
+  const style: React.CSSProperties | undefined = height ? { height: `${height}px` } : undefined
+
   return (
-    <aside className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col h-full">
+    // Stretch to parent's height so it matches center column; inner list scrolls when content overflows
+    <aside style={style} className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col">
       <div className="px-5 py-4 border-b border-slate-800 flex-shrink-0">
         <h3 className="text-sm font-semibold text-white">Transcript ({entries.length})</h3>
         <p className="text-xs text-slate-400 mt-1">Click a caption to seek the timeline.</p>

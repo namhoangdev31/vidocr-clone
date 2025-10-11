@@ -27,6 +27,8 @@ export function VideoEditor({
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(timelineDuration)
   const [zoom, setZoom] = useState(40)
+  const centerRef = useRef<HTMLDivElement | null>(null)
+  const [centerHeight, setCenterHeight] = useState<number | null>(null)
 
   useEffect(() => {
     setDuration(timelineDuration)
@@ -52,6 +54,25 @@ export function VideoEditor({
       video.pause()
     }
   }, [isPlaying])
+
+  // Observe center column height and set centerHeight for the right panel
+  useEffect(() => {
+    const el = centerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height
+        setCenterHeight(Math.round(h))
+      }
+    })
+
+    ro.observe(el)
+    // initial set
+    setCenterHeight(Math.round(el.getBoundingClientRect().height))
+
+    return () => ro.disconnect()
+  }, [centerRef.current])
 
   const handleTogglePlay = () => {
     if (!videoSource) return
@@ -105,8 +126,8 @@ export function VideoEditor({
       <div className="flex-1 flex flex-col">
         <EditorHeader info={headerInfo} />
 
-        <div className="flex-1 flex h-fit">
-          <div className="flex-1 flex flex-col gap-6 p-6">
+        <div className="flex-1 flex min-h-0 items-stretch">
+          <div ref={centerRef} className="flex-1 flex flex-col gap-6 p-6 min-h-0">
             <div className="flex gap-4 text-sm text-slate-300 flex-shrink-0">
               {['Text', 'Audio', 'Image', 'Effect'].map((label) => (
                 <button
@@ -119,7 +140,7 @@ export function VideoEditor({
               ))}
             </div>
 
-            <div className="flex-1 max-h-fit">
+            <div className="flex-1 min-h-0">
               <VideoPlayer
                 videoSource={videoSource}
                 videoRef={videoRef}
@@ -152,7 +173,7 @@ export function VideoEditor({
             </div>
           </div>
 
-          <TranscriptPanel entries={transcripts} currentTime={currentTime} onSeek={handleSeek} />
+          <TranscriptPanel entries={transcripts} currentTime={currentTime} onSeek={handleSeek} height={centerHeight} />
         </div>
 
         <Timeline
