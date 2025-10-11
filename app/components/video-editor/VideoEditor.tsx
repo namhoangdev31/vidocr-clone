@@ -261,6 +261,13 @@ export function VideoEditor({
             currentTime={currentTime}
             onSeek={handleSeek}
             height={centerHeight}
+            selectedEntryId={(() => {
+              if (!selected) return undefined
+              const track = tracks.find((t) => t.id === selected.trackId)
+              if (!track || track.type !== 'text') return undefined
+              // assume transcript entry ids align with text track item ids
+              return selected.itemId
+            })()}
             onApplyTranscripts={onApplyTranscripts}
             onUpdateEntry={(entryId, changes) => {
               // Reflect text edits onto the text track item meta.fullText and also update transcripts

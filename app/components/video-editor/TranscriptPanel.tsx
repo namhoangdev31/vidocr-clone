@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TranscriptEntry } from './types'
 
 type TranscriptPanelProps = {
@@ -10,6 +10,8 @@ type TranscriptPanelProps = {
   height?: number | null
   onApplyTranscripts?: (entries: TranscriptEntry[]) => void
   onUpdateEntry?: (entryId: string, changes: { primaryText?: string }) => void
+  // When a text track item is selected elsewhere (e.g., timeline), scroll to it
+  selectedEntryId?: string
 }
 
 const formatRange = (start: number, end: number) => {
@@ -22,10 +24,12 @@ const formatRange = (start: number, end: number) => {
   return `${toLabel(start)} - ${toLabel(end)}`
 }
 
-export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyTranscripts, onUpdateEntry }: TranscriptPanelProps) {
+export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyTranscripts, onUpdateEntry, selectedEntryId }: TranscriptPanelProps) {
   const style: React.CSSProperties | undefined = height ? { height: `${height}px` } : undefined
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftPrimary, setDraftPrimary] = useState<string>('')
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({})
   
 
   const beginEdit = (entry: TranscriptEntry) => {
@@ -45,6 +49,20 @@ export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyT
     cancelEdit()
   }
 
+  // Auto-scroll to the externally selected entry (if provided)
+  useEffect(() => {
+    if (!selectedEntryId) return
+    const container = scrollContainerRef.current
+    const el = itemRefs.current[selectedEntryId]
+    if (!container || !el) return
+
+    // Compute centered scroll position within the container
+    const offsetTop = el.offsetTop
+    const elCenter = offsetTop + el.clientHeight / 2
+    const targetScrollTop = Math.max(0, elCenter - container.clientHeight / 2)
+    container.scrollTo({ top: targetScrollTop, behavior: 'smooth' })
+  }, [selectedEntryId])
+
   return (
     // Stretch to parent's height so it matches center column; inner list scrolls when content overflows
     <aside style={style} className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col">
@@ -52,14 +70,20 @@ export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyT
         <h3 className="text-sm font-semibold text-white">Transcript ({entries.length})</h3>
         <p className="text-xs text-slate-400 mt-1">Click a caption to seek the timeline.</p>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-3 px-4 py-4 min-h-0">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-3 px-4 py-4 min-h-0">
         {entries.map((entry) => {
           const isActive = currentTime >= entry.start && currentTime <= entry.end
+          const isSelected = selectedEntryId === entry.id
           return (
             <div
               key={entry.id}
+              ref={(node) => {
+                itemRefs.current[entry.id] = node
+              }}
               className={`w-full px-4 py-3 rounded-lg border transition-colors ${
-                isActive
+                isSelected
+                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-100'
+                  : isActive
                   ? 'border-sky-500 bg-sky-500/10 text-sky-100'
                   : 'border-slate-800 bg-slate-900/60 text-slate-200'
               }`}
