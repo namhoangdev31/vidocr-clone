@@ -69,15 +69,6 @@ export function VideoPlayer({
         <div className="px-3 py-1 rounded-full bg-black/60 text-xs text-white pointer-events-auto">
           {videoSource.name}
         </div>
-        {onRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="pointer-events-auto w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
-          >
-            <X size={16} />
-          </button>
-        )}
       </div>
 
       <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-auto">
