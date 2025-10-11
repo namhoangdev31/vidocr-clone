@@ -277,14 +277,14 @@ export function RemotionTimeline({
     return undefined
   }, [])
 
-  // Removed zoom/global wheel prevention per SAMPLE SRC model
-
   const availableTimelineWidthRaw = Math.max(containerWidth - paddingWidth, 0)
   const basePxPerSecondRaw = duration > 0 ? availableTimelineWidthRaw / duration : availableTimelineWidthRaw
   const pxPerSecond = useMemo(() => {
-    const zoomFactor = Math.max(0.2, Math.min(zoom / 40, 4))
+    // Map slider zoom -> zoomFactor. divisor 40 keeps behavior similar to before.
+    // Increase cap to 20x and allow very small minima so the timeline can zoom very large.
+    const zoomFactor = Math.max(0.01, Math.min(zoom / 40, 20))
     const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
-    return Math.max(base * zoomFactor, 0.5)
+    return Math.max(base * zoomFactor, 0.01)
   }, [basePxPerSecondRaw, zoom])
 
   // Timeline width grows with zoom - this is the scrollable content width
@@ -452,14 +452,15 @@ export function RemotionTimeline({
                 const delta = e.deltaY
                 const currentZoom = zoom
                 const step = Math.max(1, Math.round(Math.abs(delta) > 50 ? 6 : 3))
-                const nextZoom = Math.max(1, Math.min(160, currentZoom + (delta > 0 ? -step : step)))
+                const nextZoom = Math.max(1, Math.min(400, currentZoom + (delta > 0 ? -step : step)))
                 const cont = tracksViewportRef.current
                 if (!cont) { onZoomChange(nextZoom); return }
 
                 // Compute next pixels-per-second using same base calculation
-                const zoomFactor = Math.max(0.2, Math.min(nextZoom / 40, 4))
+                // Match pxPerSecond calculation: allow larger zoomFactor cap
+                const zoomFactor = Math.max(0.05, Math.min(nextZoom / 40, 20))
                 const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
-                const nextPps = Math.max(base * zoomFactor, 0.5)
+                const nextPps = Math.max(base * zoomFactor, 0.05)
 
                 // Determine anchor: default to playhead; hold Alt to anchor to cursor
                 let newScrollLeft: number

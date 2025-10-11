@@ -54,7 +54,7 @@ export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onT
             <input
               type="range"
               min={1}
-              max={100}
+              max={1000}
               value={zoom}
               onChange={(event) => onZoomChange(Number(event.target.value))}
               className="w-36"
