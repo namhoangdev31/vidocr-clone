@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bookmark, Grid, MessageCircle, PanelsTopLeft, Settings } from 'lucide-react'
+import { Bookmark, Grid, MessageCircle, PanelsTopLeft, Settings, Play, Pause, Volume2, VolumeX } from 'lucide-react'
 import VideoSmallTool from './VideoSmallTool'
 import { EditorHeader } from './Header'
 import { Toolbar } from './Toolbar'
@@ -34,6 +34,19 @@ export function VideoEditor({
   const [zoom, setZoom] = useState(40)
   const centerRef = useRef<HTMLDivElement | null>(null)
   const [centerHeight, setCenterHeight] = useState<number | null>(null)
+  const [isMuted, setIsMuted] = useState(false)
+
+  const formatTime = (seconds: number) => {
+    // Format as H:MM:SS.hh (hours not padded, minutes/seconds padded to 2, hundredths padded to 2)
+    const totalHundredths = Math.max(0, Math.floor((seconds || 0) * 100))
+    const hours = Math.floor(totalHundredths / (3600 * 100))
+    const remAfterHours = totalHundredths % (3600 * 100)
+    const minutes = Math.floor(remAfterHours / (60 * 100))
+    const remAfterMinutes = remAfterHours % (60 * 100)
+    const secs = Math.floor(remAfterMinutes / 100)
+    const hundredths = remAfterMinutes % 100
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`
+  }
 
   useEffect(() => {
     setDuration(timelineDuration)
@@ -59,6 +72,14 @@ export function VideoEditor({
       video.pause()
     }
   }, [isPlaying])
+
+  // Sync mute state to the underlying video element
+  useEffect(() => {
+    const video = videoRef.current
+    if (video) {
+      video.muted = isMuted
+    }
+  }, [isMuted])
 
   // Observe center column height and set centerHeight for the right panel
   useEffect(() => {
@@ -145,7 +166,7 @@ export function VideoEditor({
               ))}
             </div>
 
-            <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+            <div className="flex-1 min-h-0 min-w-0 grid [grid-template-rows:minmax(0,1fr)_auto] gap-0 overflow-hidden">
               <VideoPlayer
                 videoSource={videoSource}
                 videoRef={videoRef}
@@ -163,6 +184,43 @@ export function VideoEditor({
                 tracks={tracks}
                 hideOverlayButtons={true}
               />
+              {videoSource && (
+                <div className="pt-2">
+                  {/* dashed separator */}
+                  <div
+                    aria-hidden
+                    className="w-full h-2 opacity-70"
+                    style={{
+                      backgroundImage:
+                        'repeating-linear-gradient(to right, rgba(255,255,255,0.14) 0 2px, rgba(0,0,0,0) 2px 16px)'
+                    }}
+                  />
+                  <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center text-slate-300">
+                    {/* Left: Time */}
+                    <div className="justify-self-start font-mono text-[11px] sm:text-xs">
+                      {formatTime(currentTime)} <span className="text-slate-500">/ {formatTime(duration)}</span>
+                    </div>
+                    {/* Center: Play/Pause */}
+                    <button
+                      type="button"
+                      onClick={handleTogglePlay}
+                      className="justify-self-center text-slate-400 hover:text-slate-200 transition-colors p-1.5"
+                      aria-label={isPlaying ? 'Pause' : 'Play'}
+                    >
+                      {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-0.5" />}
+                    </button>
+                    {/* Right: Mute/Unmute */}
+                    <button
+                      type="button"
+                      onClick={() => setIsMuted((v) => !v)}
+                      className="justify-self-end text-slate-400 hover:text-slate-200 transition-colors"
+                      aria-label={isMuted ? 'Unmute' : 'Mute'}
+                    >
+                      {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Only forward selection to VideoSmallTool when the selected item belongs to a text track.
@@ -231,6 +289,7 @@ export function VideoEditor({
           onDeleteTrackItem={onDeleteTrackItem}
           onUpdateTrackItemMeta={onUpdateTrackItemMeta}
           onSelect={(s) => setSelected(s)}
+          hidePlayTime
         />
       </div>
     </div>
