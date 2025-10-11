@@ -498,6 +498,139 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     })
   }
 
+  // WebCodecs-based renderer (video-only WebM, faster/more consistent than MediaRecorder; audio not included)
+  const renderWebCodecsWithTracks = async (
+    src: string,
+    tks: TimelineTrack[],
+    opts: { fps?: number; width?: number; height?: number; onProgress?: (p: number) => void; onStatus?: (s: string) => void; signal?: AbortSignal }
+  ): Promise<Blob> => {
+    const { SimpleWebMWriter } = await import('@/app/lib/webcodecs/simple-webm') as any
+    const fps = opts.fps ?? (videoSource?.fps ?? 30)
+    const onProgress = opts.onProgress ?? (() => {})
+    const onStatus = opts.onStatus ?? (() => {})
+    return new Promise<Blob>((resolve, reject) => {
+      let aborted = false
+      const abort = () => { aborted = true; reject(new DOMException('Rendering aborted', 'AbortError')) }
+      if (opts.signal) {
+        if (opts.signal.aborted) return abort()
+        const handler = () => abort()
+        opts.signal.addEventListener('abort', handler, { once: true })
+      }
+
+      const video = document.createElement('video')
+      video.src = src
+      video.crossOrigin = 'anonymous'
+      video.muted = true
+      video.preload = 'auto'
+      video.playsInline = true
+
+      const onLoaded = async () => {
+        const naturalW = video.videoWidth || 1280
+        const naturalH = video.videoHeight || 720
+        let targetW = opts.width || naturalW
+        let targetH = opts.height || naturalH
+        const ratio = naturalW / naturalH || 16 / 9
+        if (!opts.width && opts.height) targetW = Math.round((opts.height as number) * ratio)
+        if (opts.width && !opts.height) targetH = Math.round((opts.width as number) / ratio)
+
+        const canvas = document.createElement('canvas')
+        canvas.width = targetW
+        canvas.height = targetH
+        const ctx = canvas.getContext('2d')!
+
+        const supported = (window as any).VideoEncoder && (window as any).EncodedVideoChunk
+        if (!supported) return reject(new Error('WebCodecs not supported in this browser'))
+
+        const codecCandidates = ['vp09.00.10.08', 'vp8']
+        let chosen: string | null = null
+        for (const c of codecCandidates) {
+          // @ts-ignore
+          if (await (window as any).VideoEncoder.isConfigSupported?.({ codec: c, width: targetW, height: targetH, framerate: fps })) {
+            chosen = c; break
+          }
+        }
+        if (!chosen) chosen = 'vp8'
+
+        const writer = new SimpleWebMWriter(targetW, targetH, chosen.startsWith('vp9') ? 'V_VP9' : 'V_VP8')
+
+        // @ts-ignore
+        const encoder = new (window as any).VideoEncoder({
+          output: (chunk: any) => {
+            const data = new Uint8Array(chunk.byteLength)
+            chunk.copyTo(data)
+            writer.addChunk({ timestampUs: Number(chunk.timestamp), data, key: chunk.type === 'key' })
+          },
+          error: (e: any) => reject(e),
+        })
+
+        // @ts-ignore
+        await (window as any).VideoEncoder.isConfigSupported?.({ codec: chosen, width: targetW, height: targetH, framerate: fps })
+        encoder.configure({ codec: chosen, width: targetW, height: targetH, framerate: fps })
+
+        const textTrack = tks.find((t) => t.type === 'text')
+        const durationSec = video.duration || timelineDuration
+        const deltaUs = Math.round(1_000_000 / fps)
+        let tsUs = 0
+        let frameIndex = 0
+
+        onStatus('Đang mã hóa (WebCodecs)…')
+        await video.play().catch(() => {})
+
+        const drawAndEncode = async () => {
+          if (aborted) return
+          // Draw base
+          ctx.drawImage(video, 0, 0, targetW, targetH)
+          const current = tsUs / 1_000_000
+
+          if (textTrack) {
+            const item = textTrack.items.find((it) => current >= it.start && current <= it.end)
+            if (item) {
+              const meta: any = (item as any).meta || {}
+              const fontSize = Number(meta.fontSize) || 32
+              const text = String(meta.fullText || item.label || '')
+              const angle = Number(meta.angle) || 0
+              ctx.save()
+              ctx.font = `${Math.max(10, fontSize)}px ui-sans-serif, system-ui, -apple-system`
+              ctx.textAlign = 'center'
+              ctx.fillStyle = '#ffffff'
+              ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+              ctx.lineWidth = Math.max(2, Math.floor(fontSize / 8))
+              const x = targetW / 2
+              const y = targetH - Math.round(targetH * 0.12)
+              if (angle !== 0) { ctx.translate(x, y); ctx.rotate((angle * Math.PI) / 180); ctx.translate(-x, -y) }
+              ctx.strokeText(text, x, y)
+              ctx.fillText(text, x, y)
+              ctx.restore()
+            }
+          }
+
+          // Encode this canvas frame
+          // @ts-ignore
+          const frame = new (window as any).VideoFrame(canvas, { timestamp: tsUs })
+          encoder.encode(frame, { keyFrame: frameIndex % fps === 0 })
+          frame.close()
+
+          tsUs += deltaUs
+          frameIndex += 1
+          onProgress(Math.min(1, current / durationSec))
+
+          if (current < durationSec && !video.ended) {
+            requestAnimationFrame(drawAndEncode)
+          } else {
+            try { await encoder.flush() } catch {}
+            const blob = writer.finalize()
+            resolve(blob)
+          }
+        }
+
+        requestAnimationFrame(drawAndEncode)
+      }
+
+      video.addEventListener('loadedmetadata', onLoaded, { once: true })
+      video.load()
+    })
+  }
+
   const deriveTranscripts = useCallback((nextTracks: TimelineTrack[]): TranscriptEntry[] => {
     const textTrack = nextTracks.find((t) => t.type === 'text')
     if (!textTrack) return []
@@ -975,20 +1108,27 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
               }
             })()
             const fps = s.framerate === 'Auto' ? (videoSource?.fps ?? 30) : Number(s.framerate)
-            const blob = await renderWithTracks(
-              videoSource?.url!,
-              tracks,
-              {
-                fps,
-                height: targetHeight,
-                onProgress: (p) => setRenderProgress(p),
-                onStatus: (t) => setRenderStatus(t),
-                signal: ac.signal,
-              }
+            const canWebCodecs = typeof (window as any).VideoEncoder !== 'undefined'
+            const blob = await (canWebCodecs
+              ? renderWebCodecsWithTracks(
+                  videoSource?.url!,
+                  tracks,
+                  { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal }
+                )
+              : renderWithTracks(
+                  videoSource?.url!,
+                  tracks,
+                  { fps, height: targetHeight, onProgress: (p) => setRenderProgress(p), onStatus: (t) => setRenderStatus(t), signal: ac.signal }
+                )
             )
             const url = URL.createObjectURL(blob)
             setOutputUrl(url)
-            setRenderStatus('Hoàn tất. Bạn có thể tải video.')
+            setRenderStatus('Hoàn tất. Đang tải xuống…')
+            // Auto-download as soon as render finishes
+            const filenameBase = s.title?.replace(/\.(mp4|mov|mkv)$/i, '') || 'export'
+            const ext = 'webm'
+            downloadFile(url, `${filenameBase}.${ext}`)
+            // Optionally keep the dialog open; user can close it after download
           } catch (e: any) {
             if (e?.name === 'AbortError') {
               setRenderStatus('Đã hủy render')
