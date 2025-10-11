@@ -116,6 +116,7 @@ type TimelineCompositionProps = {
   onSeek?: (seconds: number) => void
   onSelect?: (trackId: string, itemId: string) => void
   selected?: { trackId: string; itemId: string } | null
+  onUpdateTrackItemMeta?: (trackId: string, itemId: string, meta: Record<string, any>) => void
 }
 
 const TimelineComposition: React.FC<TimelineCompositionProps> = ({
@@ -450,6 +451,8 @@ type RemotionTimelineProps = {
     end?: number
   }) => void
   onDeleteTrackItem?: (params: { trackId: string; itemId: string }) => void
+  onUpdateTrackItemMeta?: (params: { trackId: string; itemId: string; meta: Record<string, any> }) => void
+  onSelect?: (selection: { trackId: string; itemId: string } | null) => void
 }
 
 type DragState = {
@@ -461,7 +464,7 @@ type DragState = {
   initialEnd: number
 }
 
-export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek, onUpdateTrackItem, onDeleteTrackItem }: RemotionTimelineProps) {
+export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek, onUpdateTrackItem, onDeleteTrackItem, onUpdateTrackItemMeta, onSelect }: RemotionTimelineProps) {
   const [selected, setSelected] = useState<{ trackId: string; itemId: string } | null>(null)
 
   useEffect(() => {
@@ -469,6 +472,7 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected && onDeleteTrackItem) {
         onDeleteTrackItem(selected)
         setSelected(null)
+        if (typeof onSelect === 'function') onSelect(null)
       }
     }
     window.addEventListener('keydown', handler)
@@ -711,8 +715,18 @@ export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom
             draggingItem,
             onBeginDrag: onUpdateTrackItem ? handleBeginDrag : undefined,
             onSeek,
-            onSelect: (trackId: string, itemId: string) => setSelected({ trackId, itemId }),
+            onSelect: (trackId: string, itemId: string) => {
+              const sel = { trackId, itemId }
+              setSelected(sel)
+              if (typeof onSelect === 'function') onSelect(sel)
+            },
             selected,
+            onUpdateTrackItemMeta: (trackId: string, itemId: string, meta: Record<string, any>) => {
+              if (typeof (onUpdateTrackItemMeta as any) === 'function') {
+                // @ts-ignore
+                onUpdateTrackItemMeta({ trackId, itemId, meta })
+              }
+            },
           }}
           durationInFrames={durationInFrames}
           compositionWidth={Math.ceil(totalWidth)}

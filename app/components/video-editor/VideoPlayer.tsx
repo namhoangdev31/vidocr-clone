@@ -72,32 +72,35 @@ export function VideoPlayer({
 
       {/* Subtitle overlay: derive from tracks.text if provided, otherwise fall back to transcripts prop */}
       {(() => {
-        const displayTranscripts: TranscriptEntry[] | undefined = useMemo(() => {
-          if (tracks && tracks.length) {
-            const textTrack = tracks.find((t) => t.type === 'text')
-            if (textTrack) {
-              return textTrack.items
-                .map((item) => ({
-                  id: item.id,
-                  start: item.start,
-                  end: item.end,
-                  primaryText: item.label,
-                  secondaryText: '',
-                }))
-                .sort((a, b) => a.start - b.start)
+        // Preferred: read directly from tracks text items for active by time so we keep meta
+        let active:
+          | { id: string; start: number; end: number; text: string; meta?: Record<string, any> }
+          | undefined = undefined
+        if (tracks && tracks.length) {
+          const textTrack = tracks.find((t) => t.type === 'text')
+          if (textTrack) {
+            const hit = textTrack.items.find((it) => currentTime >= it.start && currentTime <= it.end)
+            if (hit) {
+              active = { id: hit.id, start: hit.start, end: hit.end, text: hit.label, meta: (hit as any).meta }
             }
           }
-          return transcripts && transcripts.length ? transcripts : undefined
-        }, [tracks, transcripts])
-
-        if (!displayTranscripts || displayTranscripts.length === 0) return null
-        const active = displayTranscripts.find((t) => currentTime >= t.start && currentTime <= t.end)
+        }
+        // Fallback to transcripts if no track item is active
+        if (!active && transcripts && transcripts.length) {
+          const t = transcripts.find((t) => currentTime >= t.start && currentTime <= t.end)
+          if (t) active = { id: t.id, start: t.start, end: t.end, text: t.primaryText }
+        }
         if (!active) return null
+
+  const fontSize = active.meta?.fontSize ?? 32
+  const angle = active.meta?.angle ?? 0
+  const textShadow = active.meta?.style?.textShadow ?? ''
+  const presetClass = active.meta?.className ?? ''
+
         return (
           <div className="pointer-events-none absolute left-1/2 transform -translate-x-1/2 bottom-20 max-w-[80%] text-center">
-            <div className="bg-black/60 px-4 py-2 rounded-md text-white">
-              <div className="text-sm font-medium leading-tight">{active.primaryText}</div>
-              {active.secondaryText && <div className="text-xs text-slate-200 mt-1">{active.secondaryText}</div>}
+            <div className="bg-black/60 px-4 py-2 rounded-md">
+              <div className={`text-white text-sm font-medium leading-tight ${presetClass}`} style={{ fontSize, textShadow, transform: `rotate(${angle}deg)` }}>{(active.meta?.fullText as string) || active.text}</div>
             </div>
           </div>
         )

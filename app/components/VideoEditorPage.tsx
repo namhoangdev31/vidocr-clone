@@ -296,12 +296,12 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     const textTrack = nextTracks.find((t) => t.type === 'text')
     if (!textTrack) return []
     return textTrack.items
-      .map((item) => ({
+      .map((item: any) => ({
         id: item.id,
         start: item.start,
         end: item.end,
-        primaryText: item.label,
-        secondaryText: '',
+        primaryText: item?.meta?.fullText || item.label,
+        secondaryText: item?.meta?.secondaryText || '',
       }))
       .sort((a, b) => a.start - b.start)
   }, [])
@@ -334,6 +334,34 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
 
       setTranscripts(deriveTranscripts(nextTracks))
       return nextTracks
+    })
+  }
+
+  const handleUpdateTrackItemMeta = ({ trackId, itemId, meta }: { trackId: string; itemId: string; meta: Record<string, any> }) => {
+    setTracks((prev) => {
+      const next = prev.map((track) => {
+        if (track.id !== trackId) return track
+
+        const items = track.items.map((item) => {
+          if (item.id !== itemId) return item
+          return {
+            ...item,
+            meta: {
+              ...(item.meta || {}),
+              ...meta,
+            },
+          }
+        })
+
+        return {
+          ...track,
+          items,
+        }
+      })
+
+      // update transcripts derived from text track as well
+      setTranscripts(deriveTranscripts(next))
+      return next
     })
   }
 
@@ -571,6 +599,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                           start: t.start,
                           end: t.end,
                           color: '#6366f1',
+                          meta: { fullText: t.primaryText, secondaryText: t.secondaryText },
                         })),
                       }
                     : track,
@@ -612,6 +641,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                         start: t.start,
                         end: t.end,
                         color: '#6366f1',
+                        meta: { fullText: t.primaryText, secondaryText: t.secondaryText },
                       })),
                     }
                   : track,
@@ -648,7 +678,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
           setTimelineDuration(Math.round(duration))
           setVideoSource((prev) => (prev ? { ...prev, duration } : prev))
         }}
-        onUpdateTrackItem={handleUpdateTrackItem}
+  onUpdateTrackItem={handleUpdateTrackItem}
         onApplyTranscripts={(entries) => {
           // Convert transcript entries to timeline items and replace text track items
           setTracks((prev) =>
@@ -662,12 +692,14 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                       start: t.start,
                       end: t.end,
                       color: '#6366f1',
+                      meta: { fullText: t.primaryText, secondaryText: t.secondaryText },
                     })),
                   }
                 : track,
             ),
           )
         }}
+        onUpdateTrackItemMeta={handleUpdateTrackItemMeta}
       />
     </div>
   )

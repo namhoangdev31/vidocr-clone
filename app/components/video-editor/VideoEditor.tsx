@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bookmark, Grid, MessageCircle, PanelsTopLeft, Settings } from 'lucide-react'
+import VideoSmallTool from './VideoSmallTool'
 import { EditorHeader } from './Header'
 import { Toolbar } from './Toolbar'
 import { Timeline } from './Timeline'
@@ -23,7 +24,9 @@ export function VideoEditor({
   onUpdateTrackItem,
   onApplyTranscripts,
   onDeleteTrackItem,
+  onUpdateTrackItemMeta,
 }: VideoEditorProps) {
+  const [selected, setSelected] = useState<{ trackId: string; itemId: string } | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -162,20 +165,13 @@ export function VideoEditor({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4 text-xs text-slate-300 flex-shrink-0">
-              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                <div className="font-semibold text-slate-100">Video info</div>
-                <p className="mt-1">Resolution adapts to the uploaded source. Replace to update.</p>
-              </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                <div className="font-semibold text-slate-100">Caption style</div>
-                <p className="mt-1">Switch between soft subtitles and hard burn in one click.</p>
-              </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                <div className="font-semibold text-slate-100">Export preset</div>
-                <p className="mt-1">Keep bitrates optimized for social reels.</p>
-              </div>
-            </div>
+            <VideoSmallTool
+              selected={selected}
+              onApplyToSelected={(meta) => {
+                if (!selected) return
+                onUpdateTrackItemMeta?.({ trackId: selected.trackId, itemId: selected.itemId, meta })
+              }}
+            />
           </div>
 
           <TranscriptPanel entries={transcripts} currentTime={currentTime} onSeek={handleSeek} height={centerHeight} onApplyTranscripts={onApplyTranscripts} />
@@ -193,6 +189,8 @@ export function VideoEditor({
           onZoomChange={setZoom}
           onUpdateTrackItem={onUpdateTrackItem}
           onDeleteTrackItem={onDeleteTrackItem}
+          onUpdateTrackItemMeta={onUpdateTrackItemMeta}
+          onSelect={(s) => setSelected(s)}
         />
       </div>
     </div>
