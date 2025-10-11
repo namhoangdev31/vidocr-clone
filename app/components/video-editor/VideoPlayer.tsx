@@ -99,8 +99,10 @@ export function VideoPlayer({
 
         return (
           <div className="pointer-events-none absolute left-1/2 transform -translate-x-1/2 bottom-20 max-w-[80%] text-center">
-            <div className="bg-black/60 px-4 py-2 rounded-md">
-              <div className={`text-white text-sm font-medium leading-tight ${presetClass}`} style={{ fontSize, textShadow, transform: `rotate(${angle}deg)` }}>{(active.meta?.fullText as string) || active.text}</div>
+            <div className={`inline-block ${presetClass}`}>
+              <span className="text-white text-sm font-medium leading-tight" style={{ fontSize, textShadow, transform: `rotate(${angle}deg)` }}>
+                {(active.meta?.fullText as string) || active.text}
+              </span>
             </div>
           </div>
         )
