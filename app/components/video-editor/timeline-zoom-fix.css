@@ -1,0 +1,13 @@
+/* Lightweight zoom prevention - only block browser zoom, keep timeline zoom */
+html {
+  /* Prevent page zoom but allow programmatic zoom */
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+}
+
+/* Only prevent double-tap zoom on timeline, allow Cmd+wheel */
+[data-timeline-container] {
+  touch-action: pan-x pan-y;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}

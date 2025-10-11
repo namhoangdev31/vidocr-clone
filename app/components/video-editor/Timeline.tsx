@@ -35,7 +35,7 @@ const formatTime = (seconds: number) => {
 export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onTogglePlay, fps, zoom, onZoomChange, onUpdateTrackItem, onDeleteTrackItem, onUpdateTrackItemMeta, onSelect }: TimelineProps) {
   
   return (
-    <section className="bg-slate-950/90 border-t border-slate-800">
+    <section className="bg-slate-950/90 border-t border-slate-800 flex-shrink-0">
       <div className="px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
@@ -71,6 +71,7 @@ export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onT
           fps={fps}
           zoom={zoom}
           onSeek={onSeek}
+          onZoomChange={onZoomChange}
           onUpdateTrackItem={onUpdateTrackItem}
           onDeleteTrackItem={onDeleteTrackItem}
           onUpdateTrackItemMeta={onUpdateTrackItemMeta}
