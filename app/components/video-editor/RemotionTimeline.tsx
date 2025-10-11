@@ -234,7 +234,7 @@ function TimelineComposition({ tracks, durationInSeconds, pxPerSecond, thumbnail
           })}
         </div>
 
-        <div style={{ position: 'absolute', top: 0, bottom: 0, left: playheadLeft, width: 2, background: 'rgba(56, 189, 248, 0.95)', boxShadow: '0 0 12px rgba(56, 189, 248, 0.6)' }} />
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: playheadLeft, width: 2, background: '#ffffff', boxShadow: '0 0 12px rgba(255, 255, 255, 0.7)' }} />
       </div>
   )
 }
@@ -302,6 +302,9 @@ export function RemotionTimeline({
   const isScrubbingRef = useRef(false)
   const lastPointerXRef = useRef<number | null>(null)
   const scrollRAFRef = useRef<number | null>(null)
+  // Skip recenter on zoom effect when we already handled it in wheel handler
+  const skipNextZoomRecenterRef = useRef(false)
+  const prevZoomRef = useRef(zoom)
 
   const safeFps = Math.max(1, Math.round(fps))
   const paddingWidth = PADDING_X * 2
@@ -455,6 +458,35 @@ export function RemotionTimeline({
     return () => { window.removeEventListener('pointermove', handlePointerMove); window.removeEventListener('pointerup', handlePointerUp) }
   }, [handleSeek])
 
+  // Recenter timeline on playhead when zoom changes externally
+  useEffect(() => {
+    // Ignore initial mount
+    const prevZoom = prevZoomRef.current
+    prevZoomRef.current = zoom
+    if (prevZoom === zoom) return
+
+    // Skip if the wheel handler already adjusted scroll
+    if (skipNextZoomRecenterRef.current) {
+      skipNextZoomRecenterRef.current = false
+      return
+    }
+
+    const cont = tracksViewportRef.current
+    if (!cont) return
+
+    // Compute current and next pixels-per-second using same formula
+    const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
+    const zoomFactor = Math.max(0.01, Math.min(zoom / 40, 20))
+    const nextPps = Math.max(base * zoomFactor, 0.01)
+
+    const nextPlayheadXContent = PADDING_X + currentTime * nextPps
+    const newScrollLeft = Math.max(0, nextPlayheadXContent - cont.clientWidth / 2)
+    const nextTimelineWidth = (duration > 0 ? nextPps * duration : Math.max(containerWidth - PADDING_X * 2, 0))
+    const nextInnerWidth = nextTimelineWidth + PADDING_X * 2
+    const maxScrollLeft = Math.max(0, nextInnerWidth - cont.clientWidth)
+    cont.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft))
+  }, [zoom, currentTime, duration, containerWidth, basePxPerSecondRaw])
+
   const handlePointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
     const target = event.target as HTMLElement
@@ -556,6 +588,8 @@ export function RemotionTimeline({
                 const maxScrollLeft = Math.max(0, nextInnerWidth - cont.clientWidth)
                 newScrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft))
 
+                // Mark to skip recentering in zoom effect, since we're handling it here
+                skipNextZoomRecenterRef.current = true
                 onZoomChange(nextZoom)
                 requestAnimationFrame(() => { cont.scrollLeft = newScrollLeft })
               }
