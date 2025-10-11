@@ -165,11 +165,33 @@ export function VideoEditor({
               />
             </div>
 
+            {/* Only forward selection to VideoSmallTool when the selected item belongs to a text track.
+                Also ensure apply handler only updates the text item's meta. */}
             <VideoSmallTool
-              selected={selected}
+              selected={(() => {
+                if (!selected) return null
+                const track = tracks.find((t) => t.id === selected.trackId)
+                if (!track || track.type !== 'text') return null
+                // ensure the item exists on the track
+                const item = track.items.find((i) => i.id === selected.itemId)
+                return item ? selected : null
+              })()}
+              // pass selected item's existing meta so the tool can initialize/reset
+              selectedMeta={(() => {
+                if (!selected) return undefined
+                const track = tracks.find((t) => t.id === selected.trackId)
+                if (!track || track.type !== 'text') return undefined
+                const item = track.items.find((i) => i.id === selected.itemId)
+                return item?.meta
+              })()}
               onApplyToSelected={(meta) => {
                 if (!selected) return
-                onUpdateTrackItemMeta?.({ trackId: selected.trackId, itemId: selected.itemId, meta })
+                const track = tracks.find((t) => t.id === selected.trackId)
+                if (!track || track.type !== 'text') return
+                const item = track.items.find((i) => i.id === selected.itemId)
+                if (!item) return
+                // Only update the selected text item's meta
+                onUpdateTrackItemMeta?.({ trackId: track.id, itemId: item.id, meta })
               }}
             />
           </div>

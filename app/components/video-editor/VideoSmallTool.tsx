@@ -5,14 +5,36 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 type Props = {
   className?: string
   selected?: { trackId: string; itemId: string } | null
+  selectedMeta?: Record<string, any> | undefined
   onApplyToSelected?: (meta: Record<string, any>) => void
 }
 
-export function VideoSmallTool({ className = '', selected = null, onApplyToSelected }: Props) {
+export function VideoSmallTool({ className = '', selected = null, selectedMeta, onApplyToSelected }: Props) {
   const [fontSize, setFontSize] = useState<number>(72)
   const [angle, setAngle] = useState<number>(0)
   const [selectedPresetId, setSelectedPresetId] = useState<string>('none')
   const debounceRef = useRef<number | undefined>(undefined)
+  // default values for the tool controls
+  const DEFAULT_FONT_SIZE = 72
+  const DEFAULT_ANGLE = 0
+  // When we programmatically set control values due to selection change, we want to
+  // suppress the auto-apply effect once so we don't immediately apply those values.
+  const suppressNextApplyRef = useRef(false)
+
+  // Helper to apply (debounced) only when user changes controls
+  const scheduleApply = (delay = 120) => {
+    if (!selected || typeof onApplyToSelected !== 'function') return
+    window.clearTimeout(debounceRef.current)
+    debounceRef.current = window.setTimeout(() => {
+      onApplyToSelected({
+        preset: selectedPreset.id,
+        fontSize,
+        angle,
+        style: selectedPreset.style || {},
+        className: selectedPreset.className,
+      })
+    }, delay)
+  }
 
   const presets = [
     { id: 'none', label: 'None', className: 'bg-slate-800/80 text-slate-200' },
@@ -31,23 +53,39 @@ export function VideoSmallTool({ className = '', selected = null, onApplyToSelec
 
   const selectedPreset = useMemo(() => presets.find((p) => p.id === selectedPresetId) || presets[0], [selectedPresetId])
 
-  // Auto-apply when sliders or preset change (debounced)
+  // When selection or selectedMeta changes, initialize or reset internal control state
   useEffect(() => {
-    if (!selected || typeof onApplyToSelected !== 'function') return
-    window.clearTimeout(debounceRef.current)
-    debounceRef.current = window.setTimeout(() => {
-      onApplyToSelected({
-        preset: selectedPreset.id,
-        fontSize,
-        angle,
-        style: selectedPreset.style || {},
-        className: selectedPreset.className,
-      })
-    }, 120)
-    return () => {
-      window.clearTimeout(debounceRef.current)
+    if (!selected) {
+      // no selection: reset to defaults
+      setFontSize(DEFAULT_FONT_SIZE)
+      setAngle(DEFAULT_ANGLE)
+      setSelectedPresetId('none')
+      // suppress any auto-apply that might otherwise fire
+      suppressNextApplyRef.current = true
+      return
     }
-  }, [fontSize, angle, selectedPreset, selected, onApplyToSelected])
+
+    // If selectedMeta is provided, populate controls from it; otherwise reset
+    // expected meta shape: { preset?: string, fontSize?: number, angle?: number, style?: object, className?: string }
+    if (selectedMeta && typeof selectedMeta === 'object') {
+      setSelectedPresetId(typeof selectedMeta.preset === 'string' ? selectedMeta.preset : 'none')
+      setFontSize(typeof selectedMeta.fontSize === 'number' ? selectedMeta.fontSize : DEFAULT_FONT_SIZE)
+      setAngle(typeof selectedMeta.angle === 'number' ? selectedMeta.angle : DEFAULT_ANGLE)
+      // prevent the auto-apply effect from firing for this programmatic initialization
+      suppressNextApplyRef.current = true
+    } else {
+      setSelectedPresetId('none')
+      setFontSize(DEFAULT_FONT_SIZE)
+      setAngle(DEFAULT_ANGLE)
+      // still suppress apply caused by initialization
+      suppressNextApplyRef.current = true
+    }
+  }, [selected, selectedMeta])
+  
+  // Clear any pending apply when selection changes
+  useEffect(() => {
+    window.clearTimeout(debounceRef.current)
+  }, [selected])
 
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
@@ -59,7 +97,10 @@ export function VideoSmallTool({ className = '', selected = null, onApplyToSelec
             min={8}
             max={500}
             value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
+            onChange={(e) => {
+              setFontSize(Number(e.target.value))
+              scheduleApply()
+            }}
             className="flex-1"
           />
           <div className="ml-3 px-3 py-1 rounded-md bg-slate-800 text-white text-sm">{fontSize}</div>
@@ -72,7 +113,10 @@ export function VideoSmallTool({ className = '', selected = null, onApplyToSelec
             min={-360}
             max={360}
             value={angle}
-            onChange={(e) => setAngle(Number(e.target.value))}
+            onChange={(e) => {
+              setAngle(Number(e.target.value))
+              scheduleApply()
+            }}
             className="flex-1"
           />
           <div className="ml-3 px-3 py-1 rounded-md bg-slate-800 text-white text-sm">{angle}</div>
@@ -85,7 +129,8 @@ export function VideoSmallTool({ className = '', selected = null, onApplyToSelec
             <button
               key={p.id}
               type="button"
-              className={`px-4 py-2 rounded-md shadow-sm ${p.className} ${selected ? '' : 'opacity-70'} ${selectedPresetId === p.id ? 'ring-2 ring-sky-400' : ''}`}
+              disabled={!selected}
+              className={`px-4 py-2 rounded-md shadow-sm ${p.className} ${selected ? '' : 'opacity-60 cursor-not-allowed'} ${selectedPresetId === p.id ? 'ring-2 ring-sky-400' : ''}`}
               onClick={() => {
                 if (!selected) return
                 setSelectedPresetId(p.id)

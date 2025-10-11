@@ -128,7 +128,19 @@ function TimelineComposition({ tracks, durationInSeconds, pxPerSecond, thumbnail
             const isTextTrack = track.type === 'text'
             const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
             return (
-              <div key={`${track.id}-timeline-row`} style={{ position: 'absolute', top, left: 0, right: 0, height: ROW_HEIGHT, borderRadius: 10, background: isThumbnailTrack ? 'rgba(15, 23, 42, 0.35)' : isTextTrack ? 'rgba(99, 102, 241, 0.18)' : 'rgba(30, 41, 59, 0.55)', border: '1px solid rgba(148, 163, 184, 0.18)', overflow: 'hidden' }}>
+              <div
+                key={`${track.id}-timeline-row`}
+                onPointerUp={(e: ReactPointerEvent<HTMLDivElement>) => {
+                  if (!isThumbnailTrack) return
+                  if (!onSeek) return
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / Math.max(1, rect.width)))
+                  const seconds = fraction * totalDuration
+                  const clamped = Math.min(totalDuration, Math.max(0, seconds))
+                  onSeek(clamped)
+                  if (onSelect) onSelect(track.id, track.items?.[0]?.id ?? '')
+                }}
+                style={{ position: 'absolute', top, left: 0, right: 0, height: ROW_HEIGHT, borderRadius: 10, background: isThumbnailTrack ? 'rgba(15, 23, 42, 0.35)' : isTextTrack ? 'rgba(99, 102, 241, 0.18)' : 'rgba(30, 41, 59, 0.55)', border: '1px solid rgba(148, 163, 184, 0.18)', overflow: 'hidden' }}>
                 {isThumbnailTrack && (() => {
                     const entry = thumbnailMap[track.id]
                     if (!entry || !entry.images || !entry.images.length) return (
@@ -167,18 +179,40 @@ function TimelineComposition({ tracks, durationInSeconds, pxPerSecond, thumbnail
                   return (
                     <div
                       key={item.id}
-                      onPointerDown={(e) => {
-                        // Begin move-drag when pressing on the body (not on handles)
+                      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+                        // Begin move-drag after small movement threshold; allow click selection
                         if (!onBeginDrag || !draggable) return
                         const target = e.target as HTMLElement
                         if (target && target.dataset.role === 'track-handle') return
-                        beginDrag('move')(e as unknown as ReactPointerEvent)
-                      }}
-                      onPointerUp={(e) => {
-                        if (!draggingItem || draggingItem.trackId !== track.id || draggingItem.itemId !== item.id) {
-                          if (onSelect) onSelect(track.id, item.id)
-                          if (onSeek) onSeek(item.start)
+
+                        const startX = e.clientX
+                        let moved = false
+
+                        const moveHandler = (ev: PointerEvent) => {
+                          const delta = Math.abs(ev.clientX - startX)
+                          if (delta > 4) {
+                            moved = true
+                            window.removeEventListener('pointermove', moveHandler)
+                            window.removeEventListener('pointerup', upHandler)
+                            onBeginDrag({ trackId: track.id, itemId: item.id, mode: 'move', clientX: ev.clientX, start: item.start, end: item.end })
+                          }
                         }
+
+                        const upHandler = (ev: PointerEvent) => {
+                          window.removeEventListener('pointermove', moveHandler)
+                          window.removeEventListener('pointerup', upHandler)
+                          if (!moved) {
+                            // treat as click/select
+                            if (onSelect) onSelect(track.id, item.id)
+                            if (onSeek) onSeek(item.start)
+                          }
+                        }
+
+                        window.addEventListener('pointermove', moveHandler)
+                        window.addEventListener('pointerup', upHandler)
+                      }}
+                      onPointerUp={() => {
+                        // noop - handled by upHandler
                       }}
                       data-role={'track-item'}
                       style={{ position: 'absolute', left: startPx, width: widthPx, top: 4, bottom: 4, borderRadius: 8, background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color, boxShadow: isCurrentDragging ? '0 0 0 2px rgba(56, 189, 248, 0.9)' : '0 8px 18px rgba(15, 23, 42, 0.45)', outline: isSelected ? '2px solid rgba(99, 102, 241, 0.95)' : undefined, transform: isSelected ? 'translateY(-1px)' : undefined, display: 'flex', alignItems: 'center', justifyContent: isTextTrack ? 'flex-start' : 'center', fontSize: isTextTrack ? 12 : 11, fontWeight: isTextTrack ? 500 : 600, color: isTextTrack ? '#ede9fe' : '#0f172a', textTransform: isTextTrack ? 'none' : 'uppercase', letterSpacing: isTextTrack ? 0 : 0.4, padding: isTextTrack ? '0 18px' : undefined, overflow: 'hidden', whiteSpace: isTextTrack ? 'nowrap' : undefined, textOverflow: isTextTrack ? 'ellipsis' : undefined, cursor, userSelect: 'none', zIndex: isTextTrack ? 2 : 1 }}
@@ -253,6 +287,15 @@ export function RemotionTimeline({
   const tracksViewportRef = useRef<HTMLDivElement>(null)
   const thumbnailCacheRef = useRef(new Map<string, { specs: ThumbnailSpec[]; images: string[] }>())
   const [thumbnailMap, setThumbnailMap] = useState<Record<string, { specs: ThumbnailSpec[]; images: string[] }>>({})
+  const pendingDragRef = useRef<{
+    trackId: string
+    itemId: string
+    clientX: number
+    start: number
+    end: number
+    isTextTrack: boolean
+    cleanup?: () => void
+  } | null>(null)
   const [containerWidth, setContainerWidth] = useState(1024)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [draggingItem, setDraggingItem] = useState<{ trackId: string; itemId: string } | null>(null)
