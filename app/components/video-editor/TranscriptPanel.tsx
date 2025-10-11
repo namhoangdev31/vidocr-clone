@@ -119,15 +119,6 @@ export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyT
           )
         })}
       </div>
-      <div className="px-4 py-3 border-t border-slate-800 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => onApplyTranscripts?.(entries)}
-          className="w-full py-2 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-sm"
-        >
-          Áp dụng lên timeline
-        </button>
-      </div>
     </aside>
   )
 }

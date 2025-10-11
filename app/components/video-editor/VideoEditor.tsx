@@ -81,6 +81,8 @@ export function VideoEditor({
     }
   }, [isMuted])
 
+  // (Auto-apply handled in parent page to avoid interference with videoSource-driven resets.)
+
   // Observe center column height and set centerHeight for the right panel
   useEffect(() => {
     const el = centerRef.current

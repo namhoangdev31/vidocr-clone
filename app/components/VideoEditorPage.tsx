@@ -124,6 +124,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   const [tracks, setTracks] = useState<TimelineTrack[]>(() => cloneDefaultTracks())
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>(DEFAULT_TRANSCRIPTS)
   const [hasApiTranscripts, setHasApiTranscripts] = useState(false)
+  const [hasAutoApplied, setHasAutoApplied] = useState(false)
   
   // Debug transcripts state
   useEffect(() => {
@@ -171,6 +172,8 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   }
 
   const handleUpload = (file: File) => {
+    // Allow auto-apply to run again for a new video
+    setHasAutoApplied(false)
     if (!file.type.includes('video')) {
       alert('Please choose an MP4 or supported video file.')
       return
@@ -225,7 +228,47 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     setVideoSource(null)
     setTimelineDuration(60)
     resetTracks()
+    setHasAutoApplied(false)
   }
+
+  // Auto-apply transcripts to timeline once at initialization: when we have transcripts
+  // and the text track is currently empty. This respects both default transcripts and
+  // API-provided ones. It runs once per page lifecycle.
+  useEffect(() => {
+    if (hasAutoApplied) return
+    if (!videoSource || !videoSource.url) return
+    const textTrack = tracks.find((t) => t.type === 'text')
+    const hasNoTextItems = !textTrack || textTrack.items.length === 0
+    const hasTranscriptsToApply = Array.isArray(transcripts) && transcripts.length > 0
+    if (hasNoTextItems && hasTranscriptsToApply) {
+      // Replace text track items with transcript entries
+      setTracks((prev) =>
+        prev.map((track) =>
+          track.type === 'text'
+            ? {
+                ...track,
+                items: transcripts.map((t, idx) => ({
+                  id: t.id || `transcript-${idx}`,
+                  label: t.primaryText.length > 42 ? `${t.primaryText.slice(0, 39)}…` : t.primaryText,
+                  start: t.start,
+                  end: t.end,
+                  color: '#6366f1',
+                  meta: {
+                    preset: 'none',
+                    fontSize: 31,
+                    angle: 0,
+                    className: 'bg-slate-800/80 text-slate-200',
+                    style: {},
+                    fullText: t.primaryText,
+                  },
+                })),
+              }
+            : track,
+        ),
+      )
+      setHasAutoApplied(true)
+    }
+  }, [hasAutoApplied, tracks, transcripts, videoSource])
 
   // Utilities for SRT export (ms formatting)
   const msToSrtTime = (msTotal: number) => {
@@ -399,7 +442,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         if (track.type === 'text') {
           return {
             ...track,
-            items: [],
+            items: hasAutoApplied ? track.items : [],
           }
         }
 
@@ -424,13 +467,10 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         return track
       })
 
-      // Don't override transcripts if we have API data
-      if (!hasApiTranscripts) {
-      setTranscripts(deriveTranscripts(nextTracks))
-      }
+      // Do not override transcripts here; preserve current transcripts (API/default)
       return nextTracks
     })
-  }, [videoSource, timelineDuration, deriveTranscripts, hasApiTranscripts])
+  }, [videoSource, timelineDuration, deriveTranscripts, hasApiTranscripts, hasAutoApplied])
 
   // Load NTS task data via /videos/nts/check/:jobId when jobId provided
   useEffect(() => {
