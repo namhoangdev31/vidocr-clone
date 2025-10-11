@@ -301,7 +301,6 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         start: item.start,
         end: item.end,
         primaryText: item?.meta?.fullText || item.label,
-        secondaryText: item?.meta?.secondaryText || '',
       }))
       .sort((a, b) => a.start - b.start)
   }, [])
@@ -599,7 +598,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                           start: t.start,
                           end: t.end,
                           color: '#6366f1',
-                          meta: { fullText: t.primaryText, secondaryText: t.secondaryText },
+                          meta: { fullText: t.primaryText },
                         })),
                       }
                     : track,
@@ -622,7 +621,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
               start: typeof c.startMs === 'number' ? Math.max(0, c.startMs) / 1000 : Number(c.start) || 0,
               end: typeof c.endMs === 'number' ? Math.max(0, c.endMs) / 1000 : Number(c.end) || 0,
               primaryText: String(c.text ?? c.primaryText ?? '').trim(),
-              secondaryText: typeof c.secondaryText === 'string' ? c.secondaryText : undefined,
+              
             }))
             .filter((t) => t.end > t.start && t.primaryText)
             .sort((a, b) => a.start - b.start)
@@ -641,7 +640,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                         start: t.start,
                         end: t.end,
                         color: '#6366f1',
-                        meta: { fullText: t.primaryText, secondaryText: t.secondaryText },
+                        meta: { fullText: t.primaryText },
                       })),
                     }
                   : track,
@@ -692,7 +691,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                       start: t.start,
                       end: t.end,
                       color: '#6366f1',
-                      meta: { fullText: t.primaryText, secondaryText: t.secondaryText },
+                      meta: { fullText: t.primaryText },
                     })),
                   }
                 : track,
@@ -700,6 +699,9 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
           )
         }}
         onUpdateTrackItemMeta={handleUpdateTrackItemMeta}
+        onSeek={(sec) => {
+          // keep same behavior
+        }}
       />
     </div>
   )

@@ -174,7 +174,25 @@ export function VideoEditor({
             />
           </div>
 
-          <TranscriptPanel entries={transcripts} currentTime={currentTime} onSeek={handleSeek} height={centerHeight} onApplyTranscripts={onApplyTranscripts} />
+          <TranscriptPanel
+            entries={transcripts}
+            currentTime={currentTime}
+            onSeek={handleSeek}
+            height={centerHeight}
+            onApplyTranscripts={onApplyTranscripts}
+            onUpdateEntry={(entryId, changes) => {
+              // Reflect text edits onto the text track item meta.fullText and also update transcripts
+              const textTrack = tracks.find((t) => t.type === 'text')
+              const item = textTrack?.items.find((i) => i.id === entryId)
+              if (item && onUpdateTrackItemMeta) {
+                const nextMeta = {
+                  ...(item.meta || {}),
+                  fullText: typeof changes.primaryText === 'string' ? changes.primaryText : (item.meta as any)?.fullText,
+                }
+                onUpdateTrackItemMeta({ trackId: textTrack!.id, itemId: item.id, meta: nextMeta })
+              }
+            }}
+          />
         </div>
 
         <Timeline

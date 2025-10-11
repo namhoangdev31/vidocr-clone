@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { TranscriptEntry } from './types'
 
 type TranscriptPanelProps = {
@@ -8,6 +9,7 @@ type TranscriptPanelProps = {
   onSeek: (seconds: number) => void
   height?: number | null
   onApplyTranscripts?: (entries: TranscriptEntry[]) => void
+  onUpdateEntry?: (entryId: string, changes: { primaryText?: string }) => void
 }
 
 const formatRange = (start: number, end: number) => {
@@ -20,8 +22,28 @@ const formatRange = (start: number, end: number) => {
   return `${toLabel(start)} - ${toLabel(end)}`
 }
 
-export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyTranscripts }: TranscriptPanelProps) {
+export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyTranscripts, onUpdateEntry }: TranscriptPanelProps) {
   const style: React.CSSProperties | undefined = height ? { height: `${height}px` } : undefined
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftPrimary, setDraftPrimary] = useState<string>('')
+  
+
+  const beginEdit = (entry: TranscriptEntry) => {
+    setEditingId(entry.id)
+  setDraftPrimary(entry.primaryText)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+  setDraftPrimary('')
+  }
+
+  const saveEdit = (entryId: string) => {
+    if (typeof onUpdateEntry === 'function') {
+      onUpdateEntry(entryId, { primaryText: draftPrimary })
+    }
+    cancelEdit()
+  }
 
   return (
     // Stretch to parent's height so it matches center column; inner list scrolls when content overflows
@@ -34,24 +56,66 @@ export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyT
         {entries.map((entry) => {
           const isActive = currentTime >= entry.start && currentTime <= entry.end
           return (
-            <button
+            <div
               key={entry.id}
-              type="button"
-              onClick={() => onSeek(entry.start)}
-              className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+              className={`w-full px-4 py-3 rounded-lg border transition-colors ${
                 isActive
                   ? 'border-sky-500 bg-sky-500/10 text-sky-100'
-                  : 'border-slate-800 bg-slate-900/60 text-slate-200 hover:border-slate-700'
+                  : 'border-slate-800 bg-slate-900/60 text-slate-200'
               }`}
             >
-              <span className="text-xs uppercase tracking-wide text-slate-400">
-                {formatRange(entry.start, entry.end)}
-              </span>
-              <p className="mt-2 text-sm font-medium leading-relaxed">{entry.primaryText}</p>
-              {entry.secondaryText && (
-                <p className="mt-1 text-xs text-slate-400 leading-relaxed">{entry.secondaryText}</p>
-              )}
-            </button>
+              <div className="flex items-start justify-between gap-3">
+                <button type="button" onClick={() => onSeek(entry.start)} className="text-left flex-1">
+                  <span className="text-xs uppercase tracking-wide text-slate-400">
+                    {formatRange(entry.start, entry.end)}
+                  </span>
+                  {editingId === entry.id ? (
+                    <div className="mt-2 space-y-2">
+                      <textarea
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-md p-2 text-sm text-slate-100 resize-none"
+                        rows={2}
+                        value={draftPrimary}
+                        onChange={(e) => setDraftPrimary(e.target.value)}
+                        placeholder="Primary text"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="mt-2 text-sm font-medium leading-relaxed">{entry.primaryText}</p>
+                    </>
+                  )}
+                </button>
+
+                {editingId === entry.id ? (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => saveEdit(entry.id)}
+                      className="px-3 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs"
+                    >
+                      Lưu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-white/90 text-xs"
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => beginEdit(entry)}
+                      className="px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-white/90 text-xs"
+                    >
+                      Sửa
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           )
         })}
       </div>
