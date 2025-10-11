@@ -84,25 +84,7 @@ export function Timeline({ tracks, duration, currentTime, isPlaying, onSeek, onT
           onSelect={onSelect}
         />
 
-        <div className="flex items-center justify-between text-sm text-slate-300">
-          <div className="flex items-center gap-2">
-            <button type="button" className="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700 flex items-center gap-2">
-              <Plus size={16} /> Audio Track
-            </button>
-            <button type="button" className="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700 flex items-center gap-2">
-              <Plus size={16} /> Image Track
-            </button>
-            <button type="button" className="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700 flex items-center gap-2">
-              <Plus size={16} /> Effect
-            </button>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            <span>Zoom:</span>
-            <button type="button" className="px-2 py-1 rounded-md bg-slate-800">-</button>
-            <button type="button" className="px-2 py-1 rounded-md bg-slate-800">+</button>
-            <button type="button" className="px-3 py-1 rounded-md bg-slate-800">Fit to window</button>
-          </div>
-        </div>
+        {/* Removed add track buttons and extra zoom controls as requested */}
       </div>
     </section>
   )

@@ -156,17 +156,7 @@ export function VideoEditor({
 
         <div className="flex-1 flex min-h-0 items-stretch overflow-hidden">
           <div ref={centerRef} className="flex-1 flex flex-col gap-6 p-6 min-h-0 min-w-0 overflow-hidden">
-            <div className="flex gap-4 text-sm text-slate-300 flex-shrink-0">
-              {['Text', 'Audio', 'Image', 'Effect'].map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="px-4 py-2 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {/* Removed top quick filter buttons as requested */}
 
             <div className="flex-1 min-h-0 min-w-0 grid [grid-template-rows:minmax(0,1fr)_auto] gap-0 overflow-hidden">
               <VideoPlayer
