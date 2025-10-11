@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers, Rocket, Scissors, Shapes, Sparkles, SquareStack, Type } from 'lucide-react'
 import { parseMedia } from '@remotion/media-parser'
 import { VideoEditor } from './video-editor/VideoEditor'
@@ -136,6 +136,11 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [lastExportSettings, setLastExportSettings] = useState<ExportSettings | null>(null)
+  const [isRendering, setIsRendering] = useState(false)
+  const [renderProgress, setRenderProgress] = useState(0)
+  const [renderStatus, setRenderStatus] = useState<string | undefined>()
+  const [outputUrl, setOutputUrl] = useState<string | null>(null)
+  const renderAbortRef = useRef<{ abort: () => void } | null>(null)
 
   useEffect(() => {
     return () => {
@@ -347,6 +352,150 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     const url = URL.createObjectURL(blob)
     downloadFile(url, (lastExportSettings?.title || videoSource?.name || 'export') + '.srt')
     URL.revokeObjectURL(url)
+  }
+
+  // Canvas-based renderer that burns in text tracks and records audio
+  const renderWithTracks = async (
+    src: string,
+    tks: TimelineTrack[],
+    opts: { fps?: number; width?: number; height?: number; onProgress?: (p: number) => void; onStatus?: (s: string) => void; signal?: AbortSignal }
+  ): Promise<Blob> => {
+    const fps = opts.fps ?? (videoSource?.fps ?? 30)
+    const onProgress = opts.onProgress ?? (() => {})
+    const onStatus = opts.onStatus ?? (() => {})
+    return new Promise<Blob>((resolve, reject) => {
+      let aborted = false
+      let recorder: MediaRecorder | null = null
+      let animationId = 0
+
+      const abort = () => {
+        aborted = true
+        try { recorder && recorder.stop() } catch {}
+        try { animationId && cancelAnimationFrame(animationId) } catch {}
+        try { (video as any)?.pause?.() } catch {}
+        reject(new DOMException('Rendering aborted', 'AbortError'))
+      }
+      if (opts.signal) {
+        const handler = () => abort()
+        if (opts.signal.aborted) return abort()
+        opts.signal.addEventListener('abort', handler, { once: true })
+      }
+
+      const video = document.createElement('video')
+      video.crossOrigin = 'anonymous'
+      video.src = src
+      video.muted = true // avoid echo; we'll grab audio via captureStream
+      video.preload = 'auto'
+      video.playsInline = true
+
+      const onLoaded = async () => {
+        const naturalW = video.videoWidth || 1280
+        const naturalH = video.videoHeight || 720
+        let targetW = opts.width || naturalW
+        let targetH = opts.height || naturalH
+
+        // Keep aspect ratio
+        const ratio = naturalW / naturalH || 16 / 9
+        if (!opts.width && opts.height) targetW = Math.round(opts.height * ratio)
+        if (opts.width && !opts.height) targetH = Math.round(opts.width / ratio)
+
+        const canvas = document.createElement('canvas')
+        canvas.width = targetW
+        canvas.height = targetH
+        const ctx = canvas.getContext('2d')!
+
+        const canvasStream = canvas.captureStream(fps)
+        // Try to add audio track from source video
+        let mixStream: MediaStream = canvasStream
+        try {
+          const vStream = (video as any).captureStream?.()
+          if (vStream) {
+            const audioTracks = vStream.getAudioTracks()
+            if (audioTracks.length) {
+              mixStream = new MediaStream([canvasStream.getVideoTracks()[0], audioTracks[0]])
+            }
+          }
+        } catch {}
+
+        // MediaRecorder
+        const mimeCandidates = [
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+        ]
+        let mime: string | undefined
+        for (const m of mimeCandidates) {
+          if ((window as any).MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break }
+        }
+        if (!mime) {
+          onStatus('Trình duyệt không hỗ trợ MediaRecorder dạng webm')
+        }
+  const chunks: BlobPart[] = []
+  recorder = new MediaRecorder(mixStream, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : undefined)
+  const textTrack = tks.find((t) => t.type === 'text')
+        const durationSec = video.duration || timelineDuration
+
+        recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data) }
+        recorder.onstop = () => {
+          try { canvasStream.getTracks().forEach((t) => t.stop()) } catch {}
+          try {
+            const blob = new Blob(chunks, { type: mime || 'video/webm' })
+            resolve(blob)
+          } catch (err) { reject(err) }
+        }
+        recorder.onerror = (e) => { reject((e as any).error || new Error('Recorder error')) }
+
+        const drawFrame = () => {
+          if (aborted) return
+          // Draw base
+          ctx.drawImage(video, 0, 0, targetW, targetH)
+          const current = video.currentTime
+          if (textTrack) {
+            const item = textTrack.items.find((it) => current >= it.start && current <= it.end)
+            if (item) {
+              const meta: any = (item as any).meta || {}
+              const fontSize = Number(meta.fontSize) || 32
+              const text = String(meta.fullText || item.label || '')
+              const angle = Number(meta.angle) || 0
+              ctx.save()
+              ctx.font = `${Math.max(10, fontSize)}px ui-sans-serif, system-ui, -apple-system`
+              ctx.textAlign = 'center'
+              ctx.fillStyle = '#ffffff'
+              ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+              ctx.lineWidth = Math.max(2, Math.floor(fontSize / 8))
+              const x = targetW / 2
+              const y = targetH - Math.round(targetH * 0.12)
+              if (angle !== 0) {
+                ctx.translate(x, y)
+                ctx.rotate((angle * Math.PI) / 180)
+                ctx.translate(-x, -y)
+              }
+              ctx.strokeText(text, x, y)
+              ctx.fillText(text, x, y)
+              ctx.restore()
+            }
+          }
+          if (!video.paused && !video.ended) {
+            animationId = requestAnimationFrame(drawFrame)
+          }
+          onProgress(Math.min(1, current / durationSec))
+        }
+
+        // Start playback and recording
+        await video.play().catch(() => {})
+        recorder.start(250)
+        onStatus('Đang ghi video…')
+        animationId = requestAnimationFrame(drawFrame)
+
+        video.onended = () => {
+          onProgress(1)
+          try { recorder && recorder.stop() } catch {}
+        }
+      }
+
+      video.addEventListener('loadedmetadata', onLoaded, { once: true })
+      video.load()
+    })
   }
 
   const deriveTranscripts = useCallback((nextTracks: TimelineTrack[]): TranscriptEntry[] => {
@@ -797,14 +946,59 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
           setLastExportSettings(s)
           setExportOpen(false)
         }}
+        isRendering={isRendering}
+        progress={renderProgress}
+        statusText={renderStatus}
+        onCancelRender={() => {
+          renderAbortRef.current?.abort()
+          setIsRendering(false)
+        }}
+        outputUrl={outputUrl}
+        onDownloadOutput={outputUrl ? () => downloadFile(outputUrl, (lastExportSettings?.title || 'export') + '.webm') : undefined}
         onPublish={async (s) => {
           setLastExportSettings(s)
-          setExportOpen(false)
-          // For now, soft export with embedded subtitles via MKV (client-side). Later integrate server render.
+          setOutputUrl(null)
+          setIsRendering(true)
+          setRenderProgress(0)
+          setRenderStatus('Chuẩn bị render…')
           try {
-            await exportSoft()
-          } catch (e) {
-            // exportSoft already alerts on error
+            const ac = new AbortController()
+            renderAbortRef.current = { abort: () => ac.abort() }
+            const targetHeight = (() => {
+              switch (s.resolution) {
+                case '2160p': return 2160
+                case '1440p': return 1440
+                case '1080p': return 1080
+                case '720p': return 720
+                case '480p': return 480
+                default: return undefined
+              }
+            })()
+            const fps = s.framerate === 'Auto' ? (videoSource?.fps ?? 30) : Number(s.framerate)
+            const blob = await renderWithTracks(
+              videoSource?.url!,
+              tracks,
+              {
+                fps,
+                height: targetHeight,
+                onProgress: (p) => setRenderProgress(p),
+                onStatus: (t) => setRenderStatus(t),
+                signal: ac.signal,
+              }
+            )
+            const url = URL.createObjectURL(blob)
+            setOutputUrl(url)
+            setRenderStatus('Hoàn tất. Bạn có thể tải video.')
+          } catch (e: any) {
+            if (e?.name === 'AbortError') {
+              setRenderStatus('Đã hủy render')
+            } else {
+              setRenderStatus('Lỗi khi render')
+              console.error(e)
+              alert('Render thất bại: ' + (e?.message || 'Unknown error'))
+            }
+          } finally {
+            setIsRendering(false)
           }
         }}
       />

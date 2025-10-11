@@ -22,6 +22,12 @@ export function ExportDialog({
   onDownloadSrt,
   onSave,
   onPublish,
+  isRendering,
+  progress,
+  statusText,
+  onCancelRender,
+  outputUrl,
+  onDownloadOutput,
 }: {
   open: boolean
   onClose: () => void
@@ -31,6 +37,12 @@ export function ExportDialog({
   onDownloadSrt?: () => void
   onSave?: (settings: ExportSettings) => void
   onPublish?: (settings: ExportSettings) => void
+  isRendering?: boolean
+  progress?: number
+  statusText?: string
+  onCancelRender?: () => void
+  outputUrl?: string | null
+  onDownloadOutput?: () => void
 }) {
   const defaultTitle = useMemo(() => {
     if (!video?.name) return 'export.mp4'
@@ -95,7 +107,7 @@ export function ExportDialog({
           </div>
 
           {/* Settings form */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 content-start">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 content-start ${isRendering ? 'opacity-70 pointer-events-none' : ''}` }>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-400">Tiêu đề</span>
               <input
@@ -185,6 +197,17 @@ export function ExportDialog({
           </div>
         </div>
 
+        {/* Progress area */}
+        {isRendering && (
+          <div className="px-6">
+            <div className="mb-2 text-sm text-slate-300">Đang xuất video… {Math.round((progress ?? 0) * 100)}%</div>
+            <div className="h-2 w-full bg-slate-800 rounded overflow-hidden">
+              <div className="h-full bg-sky-500" style={{ width: `${Math.round((progress ?? 0) * 100)}%` }} />
+            </div>
+            {statusText && <div className="mt-2 text-xs text-slate-400">{statusText}</div>}
+          </div>
+        )}
+
         {/* Footer */}
         <div className="px-6 pb-4">
           <div className="flex items-center justify-between gap-3">
@@ -211,20 +234,40 @@ export function ExportDialog({
               >
                 Tải .SRT
               </button>
+              {outputUrl && (
+                <button
+                  type="button"
+                  onClick={onDownloadOutput}
+                  className="rounded-md bg-emerald-700 hover:bg-emerald-600 text-white text-sm px-3 py-1.5"
+                >
+                  Tải video
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onSave?.(settings)}
-                className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1.5"
+                className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1.5 disabled:opacity-60"
+                disabled={!!isRendering}
               >
                 Lưu
               </button>
               <button
                 type="button"
                 onClick={() => onPublish?.(settings)}
-                className="rounded-md bg-sky-600 hover:bg-sky-500 text-white text-sm px-3 py-1.5"
+                className="rounded-md bg-sky-600 hover:bg-sky-500 text-white text-sm px-3 py-1.5 disabled:opacity-60"
+                disabled={!!isRendering}
               >
-                Xuất bản
+                {isRendering ? 'Đang xuất…' : 'Xuất bản'}
               </button>
+              {isRendering && (
+                <button
+                  type="button"
+                  onClick={onCancelRender}
+                  className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1.5"
+                >
+                  Hủy render
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
