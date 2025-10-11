@@ -599,7 +599,15 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                           start: t.start,
                           end: t.end,
                           color: '#6366f1',
-                          meta: { fullText: t.primaryText },
+                          meta: {
+                            // default VideoSmallTool style
+                            preset: 'none',
+                            fontSize: 31,
+                            angle: 0,
+                            className: 'bg-slate-800/80 text-slate-200',
+                            style: {},
+                            fullText: t.primaryText,
+                          },
                         })),
                       }
                     : track,
@@ -641,7 +649,14 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                         start: t.start,
                         end: t.end,
                         color: '#6366f1',
-                        meta: { fullText: t.primaryText },
+                        meta: {
+                          preset: 'none',
+                          fontSize: 31,
+                          angle: 0,
+                          className: 'bg-slate-800/80 text-slate-200',
+                          style: {},
+                          fullText: t.primaryText,
+                        },
                       })),
                     }
                   : track,
@@ -692,7 +707,14 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
                       start: t.start,
                       end: t.end,
                       color: '#6366f1',
-                      meta: { fullText: t.primaryText },
+                      meta: {
+                        preset: 'none',
+                        fontSize: 31,
+                        angle: 0,
+                        className: 'bg-slate-800/80 text-slate-200',
+                        style: {},
+                        fullText: t.primaryText,
+                      },
                     })),
                   }
                 : track,
