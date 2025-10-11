@@ -72,7 +72,7 @@ type CompositionProps = {
   tracks: TimelineTrack[]
   durationInSeconds: number
   pxPerSecond: number
-  thumbnailMap: Record<string, string[]>
+  thumbnailMap: Record<string, { specs: ThumbnailSpec[]; images: string[] }>
   draggingItem: { trackId: string; itemId: string } | null
   onBeginDrag?: (params: {
     trackId: string
@@ -129,22 +129,28 @@ function TimelineComposition({ tracks, durationInSeconds, pxPerSecond, thumbnail
             const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
             return (
               <div key={`${track.id}-timeline-row`} style={{ position: 'absolute', top, left: 0, right: 0, height: ROW_HEIGHT, borderRadius: 10, background: isThumbnailTrack ? 'rgba(15, 23, 42, 0.35)' : isTextTrack ? 'rgba(99, 102, 241, 0.18)' : 'rgba(30, 41, 59, 0.55)', border: '1px solid rgba(148, 163, 184, 0.18)', overflow: 'hidden' }}>
-                {isThumbnailTrack && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: 0, pointerEvents: 'none' }}>
-                    {(track.thumbnails ?? []).map((thumb, thumbIndex) => {
-                      const segmentDuration = (thumb.duration ?? totalDuration / (track.thumbnails?.length || 1))
-                      const widthPercent = Math.min(1, Math.max(segmentDuration / totalDuration, 0))
-                      const flexAmount = Math.max(widthPercent, 0.0001)
-                      const images = thumbnailMap[track.id] ?? []
-                      const imageSrc = images[thumbIndex] ?? images[images.length - 1]
-                      return (
-                        <div key={`${track.id}-thumb-${thumbIndex}`} style={{ flexBasis: `${flexAmount * 100}%`, flexGrow: flexAmount, flexShrink: 0, height: '100%', overflow: 'hidden' }}>
-                          {imageSrc ? <img src={imageSrc} alt="thumbnail" style={{ height: '100%', display: 'block' }} /> : <div style={{ width: '100%', height: '100%', background: 'rgba(30,41,59,0.6)' }} />}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                {isThumbnailTrack && (() => {
+                    const entry = thumbnailMap[track.id]
+                    if (!entry || !entry.images || !entry.images.length) return (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(30,41,59,0.6)' }} />
+                    )
+
+                    // Render each thumbnail at its correct time position and width
+                    return (
+                      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                        {entry.images.map((src, i) => {
+                          const spec = entry.specs[i] ?? { time: (i / Math.max(1, entry.images.length)) * totalDuration, duration: totalDuration / Math.max(1, entry.images.length) }
+                          const left = (spec.time / totalDuration) * 100
+                          const widthPercent = ((spec.duration ?? (totalDuration / Math.max(1, entry.images.length))) / totalDuration) * 100
+                          return (
+                            <div key={`${track.id}-thumb-${i}`} style={{ position: 'absolute', left: `${left}%`, width: `${widthPercent}%`, top: 0, bottom: 0, overflow: 'hidden' }}>
+                              <img src={src} alt={`thumb-${i}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                })()}
                 {!isThumbnailTrack && track.items.map((item) => {
                   const startPx = Math.max(0, item.start * pxPerSecond)
                   const widthPx = Math.max(4, Math.max(0, (item.end - item.start)) * pxPerSecond)
@@ -245,8 +251,8 @@ export function RemotionTimeline({
   // Remove playerRef - not using Remotion Player anymore
   const rootRef = useRef<HTMLDivElement>(null)
   const tracksViewportRef = useRef<HTMLDivElement>(null)
-  const thumbnailCacheRef = useRef(new Map<string, string[]>())
-  const [thumbnailMap, setThumbnailMap] = useState<Record<string, string[]>>({})
+  const thumbnailCacheRef = useRef(new Map<string, { specs: ThumbnailSpec[]; images: string[] }>())
+  const [thumbnailMap, setThumbnailMap] = useState<Record<string, { specs: ThumbnailSpec[]; images: string[] }>>({})
   const [containerWidth, setContainerWidth] = useState(1024)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [draggingItem, setDraggingItem] = useState<{ trackId: string; itemId: string } | null>(null)
@@ -299,26 +305,47 @@ export function RemotionTimeline({
   }, [onUpdateTrackItem])
 
   useEffect(() => {
+    // Generate one thumbnail per visible segment based on current pxPerSecond.
+    // Debounce generation to avoid thrashing while scrubbing/zooming.
     let cancelled = false
-    const loadThumbnails = async () => {
-      const entries = await Promise.all(tracks.map(async (track) => {
-        if (!(track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length)) return [track.id, undefined] as const
-        const cacheKey = `${track.assetSrc}|${track.thumbnails.map((t) => `${t.time}-${t.duration ?? ''}`).join(',')}`
-        const cached = thumbnailCacheRef.current.get(cacheKey)
-        if (cached) return [track.id, cached] as const
-        try {
-          const specs: ThumbnailSpec[] = (track.thumbnails ?? []).map((t) => ({ time: t.time, duration: t.duration }))
-          const images = await generateVideoThumbnails(track.assetSrc, specs)
-          if (!cancelled && images.length) thumbnailCacheRef.current.set(cacheKey, images)
-          return [track.id, images] as const
-        } catch { return [track.id, []] as const }
-      }))
-      if (cancelled) return
-      setThumbnailMap(() => { const next: Record<string, string[]> = {}; for (const [trackId, images] of entries) if (images && images.length) next[trackId] = images as string[]; return next })
-    }
-    loadThumbnails();
-    return () => { cancelled = true }
-  }, [tracks])
+    const timer = setTimeout(() => {
+      const loadThumbnails = async () => {
+        const entries = await Promise.all(tracks.map(async (track) => {
+          if (!(track.type === 'image' && track.assetSrc)) return [track.id, undefined] as const
+
+          // Determine how many thumbnails to generate for this track based on timeline width
+          const timelineWidth = Math.max(1, duration) * pxPerSecond
+          const targetThumbPx = 160
+          const maxThumbs = 1000
+          const count = Math.max(1, Math.min(maxThumbs, Math.ceil(timelineWidth / targetThumbPx)))
+
+          const cacheKey = `${track.assetSrc}|pps:${Math.round(pxPerSecond)}|count:${count}`
+          const cached = thumbnailCacheRef.current.get(cacheKey)
+          if (cached) return [track.id, cached] as const
+
+          try {
+            const specs: ThumbnailSpec[] = Array.from({ length: count }, (_, i) => {
+              const t = Math.min(duration, (i / Math.max(1, count)) * duration)
+              return { time: t }
+            })
+            const images = await generateVideoThumbnails(track.assetSrc, specs)
+            if (!cancelled && images.length) thumbnailCacheRef.current.set(cacheKey, { specs, images })
+            return [track.id, { specs, images }] as const
+          } catch { return [track.id, []] as const }
+        }))
+
+        if (cancelled) return
+        setThumbnailMap(() => {
+          const next: Record<string, { specs: ThumbnailSpec[]; images: string[] }> = {}
+          for (const [trackId, entry] of entries) if (entry && (entry as any).images && (entry as any).images.length) next[trackId] = entry as { specs: ThumbnailSpec[]; images: string[] }
+          return next
+        })
+      }
+      loadThumbnails()
+    }, 180)
+
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [tracks, duration, pxPerSecond])
 
   // Remove Player sync - using direct currentTime now
 

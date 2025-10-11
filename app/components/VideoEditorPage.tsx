@@ -379,8 +379,9 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     const durationSeconds = videoSource.duration ?? timelineDuration
     const fps = videoSource.fps ?? 30
     const totalDuration = Math.max(durationSeconds, 1)
-    const desiredSegmentSeconds = 2
-    const thumbnailCount = Math.max(12, Math.min(48, Math.ceil(totalDuration / desiredSegmentSeconds)))
+  // Generate more frequent thumbnails so image track appears continuous when scrubbing
+  const desiredSegmentSeconds = 0.2
+  const thumbnailCount = Math.max(12, Math.min(1000, Math.ceil(totalDuration / desiredSegmentSeconds)))
     const segment = totalDuration / thumbnailCount
     const thumbnails = Array.from({ length: thumbnailCount }, (_, index) => {
       const start = Math.min(totalDuration, index * segment)
