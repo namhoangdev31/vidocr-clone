@@ -157,6 +157,7 @@ export function VideoEditor({
                 onUpload={onUpload}
                 onRemove={onRemoveVideo}
                 transcripts={transcripts}
+                tracks={tracks}
                 hideOverlayButtons={true}
               />
             </div>

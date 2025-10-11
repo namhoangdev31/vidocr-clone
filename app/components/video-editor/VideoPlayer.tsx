@@ -1,7 +1,7 @@
  'use client'
 
-import { RefObject } from 'react'
-import { TranscriptEntry } from './types'
+import { RefObject, useMemo } from 'react'
+import { TranscriptEntry, TimelineTrack } from './types'
 import { Pause, Play, UploadCloud, Volume2, X } from 'lucide-react'
 import { UploadDropzone } from './UploadDropzone'
 import { VideoSource } from './types'
@@ -20,6 +20,7 @@ type VideoPlayerProps = {
   onUpload: (file: File) => void
   onRemove?: () => void
   transcripts?: TranscriptEntry[]
+  tracks?: TimelineTrack[]
   hideOverlayButtons?: boolean
 }
 
@@ -44,6 +45,7 @@ export function VideoPlayer({
   onUpload,
   onRemove,
   transcripts,
+  tracks,
   hideOverlayButtons,
 }: VideoPlayerProps) {
   if (!videoSource) {
@@ -68,21 +70,38 @@ export function VideoPlayer({
         preload="metadata"
       />
 
-      {/* Subtitle overlay */}
-      {transcripts && transcripts.length > 0 && (
-        <div className="pointer-events-none absolute left-1/2 transform -translate-x-1/2 bottom-20 max-w-[80%] text-center">
-          {(() => {
-            const active = transcripts.find((t) => currentTime >= t.start && currentTime <= t.end)
-            if (!active) return null
-            return (
-              <div className="bg-black/60 px-4 py-2 rounded-md text-white">
-                <div className="text-sm font-medium leading-tight">{active.primaryText}</div>
-                {active.secondaryText && <div className="text-xs text-slate-200 mt-1">{active.secondaryText}</div>}
-              </div>
-            )
-          })()}
-        </div>
-      )}
+      {/* Subtitle overlay: derive from tracks.text if provided, otherwise fall back to transcripts prop */}
+      {(() => {
+        const displayTranscripts: TranscriptEntry[] | undefined = useMemo(() => {
+          if (tracks && tracks.length) {
+            const textTrack = tracks.find((t) => t.type === 'text')
+            if (textTrack) {
+              return textTrack.items
+                .map((item) => ({
+                  id: item.id,
+                  start: item.start,
+                  end: item.end,
+                  primaryText: item.label,
+                  secondaryText: '',
+                }))
+                .sort((a, b) => a.start - b.start)
+            }
+          }
+          return transcripts && transcripts.length ? transcripts : undefined
+        }, [tracks, transcripts])
+
+        if (!displayTranscripts || displayTranscripts.length === 0) return null
+        const active = displayTranscripts.find((t) => currentTime >= t.start && currentTime <= t.end)
+        if (!active) return null
+        return (
+          <div className="pointer-events-none absolute left-1/2 transform -translate-x-1/2 bottom-20 max-w-[80%] text-center">
+            <div className="bg-black/60 px-4 py-2 rounded-md text-white">
+              <div className="text-sm font-medium leading-tight">{active.primaryText}</div>
+              {active.secondaryText && <div className="text-xs text-slate-200 mt-1">{active.secondaryText}</div>}
+            </div>
+          </div>
+        )
+      })()}
 
       {!hideOverlayButtons && (
         <>
