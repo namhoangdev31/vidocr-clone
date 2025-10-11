@@ -20,12 +20,12 @@ const formatRange = (start: number, end: number) => {
 
 export function TranscriptPanel({ entries, currentTime, onSeek }: TranscriptPanelProps) {
   return (
-    <aside className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col">
-      <div className="px-5 py-4 border-b border-slate-800">
-        <h3 className="text-sm font-semibold text-white">Transcript</h3>
+    <aside className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col h-full">
+      <div className="px-5 py-4 border-b border-slate-800 flex-shrink-0">
+        <h3 className="text-sm font-semibold text-white">Transcript ({entries.length})</h3>
         <p className="text-xs text-slate-400 mt-1">Click a caption to seek the timeline.</p>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-3 px-4 py-4">
+      <div className="flex-1 overflow-y-auto space-y-3 px-4 py-4 min-h-0">
         {entries.map((entry) => {
           const isActive = currentTime >= entry.start && currentTime <= entry.end
           return (

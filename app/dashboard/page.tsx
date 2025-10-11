@@ -180,7 +180,7 @@ export default function DashboardPage() {
                   <div className="options-grid">
                     <div className="options-section">
                       <LanguageSelector
-                        sourceLang={jobData.sourceLang || "en"}
+                        sourceLang={jobData.sourceLang || ""}
                         targetLang={jobData.targetLang || "vi"}
                         onSourceLangChange={(lang) =>
                           setJobData((prev) => ({ ...prev, sourceLang: lang }))

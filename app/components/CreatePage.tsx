@@ -2,14 +2,13 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 // ffmpeg-related features have moved to ProgressDetailPage
-import { translationAPI } from '@/app/lib/api'
 import { useFileUpload } from '@/app/hooks/useFileUpload'
 import { useJobManagement } from '@/app/hooks/useJobManagement'
 import { useWebSocket } from '@/app/hooks/useWebSocket'
 import { useCreatePageData } from '@/app/hooks/useCreatePageData'
 import AuthStatus from '@/app/components/common/AuthStatus'
-import { videoTranslationService, CreateJobRequest } from '@/app/lib/api/videoTranslationService'
 import { SUPPORTED_LANGUAGES, AI_MODELS, ERROR_CODES } from '@/app/lib/config/environment'
+import { apiClient } from '@/app/lib/api'
 
 type SubtitleCue = {
   id: string
@@ -124,8 +123,8 @@ export default function CreatePage() {
   const [showSourceDropdown, setShowSourceDropdown] = useState(false)
   const [showTargetDropdown, setShowTargetDropdown] = useState(false)
   const [showModelDropdown, setShowModelDropdown] = useState(false)
-  const [sourceLang, setSourceLang] = useState('zh')
-  const [targetLang, setTargetLang] = useState('vi')
+  const [sourceLang, setSourceLang] = useState('Chinese')
+  const [targetLang, setTargetLang] = useState('Vietnamese')
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
   const [translationMethod, setTranslationMethod] = useState<'soft' | 'hard' | 'text' | 'dubbing' | 'dubbingV2'>('soft')
   const [removeOriginalText, setRemoveOriginalText] = useState(false)
@@ -398,48 +397,29 @@ export default function CreatePage() {
     }
 
     try {
-      // Find selected model details
-      const modelDetails = availableModels.find(m => m.id === selectedModel)
-      if (!modelDetails) {
-        throw new Error('Selected model not found')
-      }
+      // Default to ASR-based extraction; switch to 'vision' if you add OCR region UI
+      const method = 'audio'
+      const language = targetLang
 
-      // Upload video and create job in a single request
-      const job = await videoTranslationService.uploadVideoAndCreateJob({
-        file: uploadedFile,
-        fileKey: `inputs/${uploadedFile.name}`,
-        sourceLang: autoDetect && detectedLanguage ? detectedLanguage : sourceLang,
-        targetLang,
-        model: selectedModel,
-        aiProvider: modelDetails.provider as 'openai' | 'anthropic',
-        subtitleFormat: translationMethod === 'soft' ? 'srt' : 'ass',
-        burnSub: translationMethod === 'hard',
-        hardSub: translationMethod === 'hard',
-        softSub: translationMethod === 'soft',
-        voiceover: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
-        voiceProfile: translationMethod === 'dubbing' || translationMethod === 'dubbingV2' ? selectedVoiceProfile : undefined,
-        audioDubbing: translationMethod === 'dubbing' || translationMethod === 'dubbingV2',
-        audioDubbingV2: translationMethod === 'dubbingV2',
-        textOnly: translationMethod === 'text',
-        glossaryId: selectedGlossary || undefined,
-        advanced: {
-          removeOriginalVoice: false,
-          removeBgm: removeBackgroundMusic,
-          mergeCaption: mergeCaptions,
-          mergeOpenCaption: mergeOpenCaptions,
-          brightness,
-          contrast
-        }
+      const form = new FormData()
+      form.append('file', uploadedFile)
+      form.append('method', method)
+      form.append('language', language)
+
+      const response = await apiClient.post('/videos/nts/upload-and-extract', form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       })
-      console.log('Translation job created:', job)
-      
-      // Show success message
-      alert(`Bắt đầu dịch thành công!\nJob ID: ${job.id}\nTrạng thái: ${job.status}`)
-      
-    } catch (error) {
-      console.error('Failed to start translation:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Có lỗi xảy ra khi bắt đầu dịch'
-      alert(`Lỗi: ${errorMessage}`)
+
+      const data = response.data as { status?: string; data?: { reqId?: string; status?: string } }
+      const reqId = data?.data?.reqId
+      if (reqId) {
+        alert(`Gửi yêu cầu trích xuất thành công. Mã yêu cầu: ${reqId}`)
+      } else {
+        alert('Gửi yêu cầu thành công, nhưng không nhận được reqId từ server.')
+      }
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || 'Gửi yêu cầu thất bại'
+      alert(msg)
     }
   }
 
@@ -449,23 +429,7 @@ export default function CreatePage() {
       alert('Cần phụ đề nguồn để dịch')
       return
     }
-    try {
-      // Note: isUploading is managed by useFileUpload hook, not local state
-      const results: SubtitleCue[] = []
-      for (const c of src) {
-        const res = await translationAPI.translateText({
-          text: c.text,
-          sourceLang: sourceLang,
-          targetLang: targetLang,
-        })
-        results.push({ ...c, id: c.id + '-t', text: res.translatedText })
-      }
-      setTargetSubtitles(results)
-      alert('Dịch phụ đề hoàn tất')
-    } catch (e) {
-      console.error(e)
-      alert('Gọi API dịch thất bại')
-    }
+    alert('API dịch văn bản legacy chưa được document trong api-inventory.md. Vui lòng cập nhật backend/docs trước khi sử dụng.')
   }
 
   // Remove uploaded file
@@ -707,7 +671,7 @@ export default function CreatePage() {
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-lg">🌐</span>
-                    <span>{availableLanguages.find(l => l.code === sourceLang)?.name || sourceLang}</span>
+                    <span>{availableLanguages.find(l => l.name === sourceLang)?.name || sourceLang}</span>
                   </div>
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -719,7 +683,7 @@ export default function CreatePage() {
                       <button
                         key={lang.code}
                         onClick={() => {
-                          setSourceLang(lang.code)
+                          setSourceLang(lang.name)
                           setShowSourceDropdown(false)
                         }}
                         className={`w-full text-left px-4 py-2 text-sm ${sourceLang === lang.code ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}
@@ -768,7 +732,7 @@ export default function CreatePage() {
                       <button
                         key={lang.code}
                         onClick={() => {
-                          setTargetLang(lang.code)
+                          setTargetLang(lang.name)
                           setShowTargetDropdown(false)
                         }}
                         className={`w-full text-left px-4 py-2 text-sm ${targetLang === lang.code ? 'bg-gray-600 text-white' : 'text-gray-200 hover:bg-gray-600'}`}

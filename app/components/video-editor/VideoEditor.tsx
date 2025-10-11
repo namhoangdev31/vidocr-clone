@@ -100,14 +100,14 @@ export function VideoEditor({
   }, [toolbarItems])
 
   return (
-    <div className="h-full flex bg-slate-900 text-white">
+    <div className="flex bg-slate-900 text-white">
       <Toolbar items={effectiveToolbarItems} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col">
         <EditorHeader info={headerInfo} />
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 flex flex-col gap-6 p-6 overflow-hidden">
-            <div className="flex gap-4 text-sm text-slate-300">
+        <div className="flex-1 flex h-fit">
+          <div className="flex-1 flex flex-col gap-6 p-6">
+            <div className="flex gap-4 text-sm text-slate-300 flex-shrink-0">
               {['Text', 'Audio', 'Image', 'Effect'].map((label) => (
                 <button
                   key={label}
@@ -119,7 +119,7 @@ export function VideoEditor({
               ))}
             </div>
 
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 max-h-fit">
               <VideoPlayer
                 videoSource={videoSource}
                 videoRef={videoRef}
@@ -136,7 +136,7 @@ export function VideoEditor({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4 text-xs text-slate-300">
+            <div className="grid grid-cols-3 gap-4 text-xs text-slate-300 flex-shrink-0">
               <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 <div className="font-semibold text-slate-100">Video info</div>
                 <p className="mt-1">Resolution adapts to the uploaded source. Replace to update.</p>

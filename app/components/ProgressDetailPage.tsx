@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { useJobManagement } from '@/app/hooks/useJobManagement'
 import { useWebSocket } from '@/app/hooks/useWebSocket'
-import { videoTranslationService } from '@/app/lib/api/videoTranslationService'
-import { STAGE_DISPLAY_NAMES } from '@/app/lib/config/environment'
+import { apiClient } from '@/app/lib/api'
+import { API_BASE_URL, STAGE_DISPLAY_NAMES } from '@/app/lib/config/environment'
 
 // Minimal subset re-used from CreatePage
 
@@ -48,55 +47,47 @@ export default function ProgressDetailPage({ jobId, onBack }: ProgressDetailPage
   const [durationMs, setDurationMs] = useState(0)
   const timelineRef = useRef<HTMLDivElement>(null)
 
-  // API integration
-  const { getJobStatus, cancelJob, isLoading, error } = useJobManagement({
-    autoRefresh: false
-  })
-
   const { isConnected: isWebSocketConnected } = useWebSocket()
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState<boolean>(false)
 
-  // Load job data
+  // Load NTS task data via /videos/nts/check/:taskId
   useEffect(() => {
-    const loadJobData = async () => {
+    const loadTask = async () => {
       try {
-        const job = await getJobStatus(jobId)
-        console.log('Job data loaded:', job)
-        
-        // Load video URL if available
-        if (job.outputs?.mp4Key) {
-          try {
-            const downloadResponse = await videoTranslationService.getDownloadUrl(job.outputs.mp4Key)
-            setVideoUrl(downloadResponse.url)
-          } catch (error) {
-            console.error('Failed to get video download URL:', error)
-          }
+        setIsLoading(true)
+        setError(null)
+        const res = await apiClient.get(`/videos/nts/check/${jobId}`)
+        const data = res?.data?.data
+        if (data?.videoUrl) {
+          const origin = API_BASE_URL.replace('/v1', '')
+          setVideoUrl(origin + data.videoUrl)
         }
-        
-        // Load download URLs for all outputs
-        const urls: Record<string, string> = {}
-        if (job.outputs) {
-          for (const [type, key] of Object.entries(job.outputs)) {
-            if (key) {
-              try {
-                const downloadResponse = await videoTranslationService.getDownloadUrl(key)
-                urls[type] = downloadResponse.url
-              } catch (error) {
-                console.error(`Failed to get download URL for ${type}:`, error)
-              }
-            }
-          }
-        }
-        setDownloadUrls(urls)
-        
-      } catch (error) {
-        console.error('Failed to load job data:', error)
+      } catch (e: any) {
+        const msg = e?.response?.data?.message || e?.message || 'Failed to load task data'
+        setError(msg)
+      } finally {
+        setIsLoading(false)
       }
     }
+    if (jobId) loadTask()
+  }, [jobId])
 
-    if (jobId) {
-      loadJobData()
-    }
-  }, [jobId, getJobStatus])
+  // Optional lightweight polling for updates
+  useEffect(() => {
+    if (!jobId) return
+    const t = setInterval(async () => {
+      try {
+        const res = await apiClient.get(`/videos/nts/check/${jobId}`)
+        const data = res?.data?.data
+        if (data?.videoUrl) {
+          const origin = API_BASE_URL.replace('/v1', '')
+          setVideoUrl(origin + data.videoUrl)
+        }
+      } catch {}
+    }, 10000)
+    return () => clearInterval(t)
+  }, [jobId])
 
   // Demo subtitles (replace with real data from API)
   useEffect(() => {

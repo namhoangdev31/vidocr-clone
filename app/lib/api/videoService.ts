@@ -26,22 +26,7 @@ export class VideoService {
   }
 
   async getPresignedUrl(fileName: string, fileType: string): Promise<PresignedUrlResponse> {
-    const response = await fetch(`${this.baseUrl}/uploads/presigned`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        fileName,
-        fileType,
-        category: 'video'
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(handleApiError({ response, data: error }).message);
-    }
-
-    return await response.json();
+    throw new Error('Endpoint /v1/uploads/presigned is not available. See api-inventory.md');
   }
 
   async uploadVideo(file: File): Promise<string> {
@@ -70,192 +55,26 @@ export class VideoService {
   }
 
   async uploadLargeVideo(file: File, sessionId: string, onProgress?: (progress: number) => void): Promise<string> {
-    const chunkSize = config.FILE_LIMITS.CHUNK_SIZE;
-    const totalChunks = Math.ceil(file.size / chunkSize);
-    
-    try {
-      // Initiate multipart upload
-      const initiateResponse = await fetch(`${this.baseUrl}/uploads/multipart/initiate`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-          category: 'video'
-        })
-      });
-
-      if (!initiateResponse.ok) {
-        const error = await initiateResponse.json();
-        throw new Error(handleApiError({ response: initiateResponse, data: error }).message);
-      }
-
-      const { key, uploadId } = await initiateResponse.json();
-      const parts = [];
-
-      // Upload chunks
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * chunkSize;
-        const end = Math.min(start + chunkSize, file.size);
-        const chunk = file.slice(start, end);
-        
-        // Get presigned URL for chunk
-        const signResponse = await fetch(`${this.baseUrl}/uploads/multipart/sign-part`, {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({
-            key,
-            uploadId,
-            partNumber: i + 1
-          })
-        });
-
-        if (!signResponse.ok) {
-          const error = await signResponse.json();
-          throw new Error(handleApiError({ response: signResponse, data: error }).message);
-        }
-
-        const { url } = await signResponse.json();
-        
-        // Upload chunk
-        const uploadResponse = await fetch(url, {
-          method: 'PUT',
-          body: chunk
-        });
-        
-        if (!uploadResponse.ok) {
-          throw new Error(`Chunk ${i + 1} upload failed`);
-        }
-        
-        parts.push({
-          PartNumber: i + 1,
-          ETag: uploadResponse.headers.get('ETag')
-        });
-        
-        // Update progress
-        const progress = ((i + 1) / totalChunks) * 100;
-        onProgress?.(progress);
-      }
-      
-      // Complete multipart upload
-      const completeResponse = await fetch(`${this.baseUrl}/uploads/multipart/complete`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          key,
-          uploadId,
-          parts
-        })
-      });
-
-      if (!completeResponse.ok) {
-        const error = await completeResponse.json();
-        throw new Error(handleApiError({ response: completeResponse, data: error }).message);
-      }
-
-      const result = await completeResponse.json();
-      return result.key;
-    } catch (error) {
-      console.error('Large video upload error:', error);
-      throw error;
-    }
+    throw new Error('Multipart upload endpoints under /v1/uploads/multipart are not available. See api-inventory.md');
   }
 
   async createJob(jobData: CreateJobData): Promise<Job> {
-    try {
-      const response = await retryWithBackoff(async () => {
-        return await fetch(`${this.baseUrl}/videos`, {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify(jobData)
-        });
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(handleApiError({ response, data: error }).message);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Create job error:', error);
-      throw error;
-    }
+    throw new Error('Endpoint /v1/videos is not available. See api-inventory.md');
   }
 
   async getJobStatus(jobId: string): Promise<Job> {
-    try {
-      const response = await fetch(`${this.baseUrl}/jobs/${jobId}/status`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(handleApiError({ response, data: error }).message);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Get job status error:', error);
-      throw error;
-    }
+    throw new Error('Endpoint /v1/jobs/:jobId/status is not available. See api-inventory.md');
   }
 
   async cancelJob(jobId: string): Promise<void> {
-    try {
-      const response = await fetch(`${this.baseUrl}/videos/${jobId}/cancel`, {
-        method: 'POST',
-        headers: this.getHeaders()
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(handleApiError({ response, data: error }).message);
-      }
-    } catch (error) {
-      console.error('Cancel job error:', error);
-      throw error;
-    }
+    throw new Error('Endpoint /v1/videos/:jobId/cancel is not available. See api-inventory.md');
   }
 
   async getDownloadUrl(outputKey: string): Promise<DownloadUrlResponse> {
-    try {
-      const response = await fetch(`${this.baseUrl}/outputs/presigned?key=${outputKey}`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(handleApiError({ response, data: error }).message);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Get download URL error:', error);
-      throw error;
-    }
+    throw new Error('Endpoint /v1/outputs/presigned is not available. See api-inventory.md');
   }
 
   async getJobs(): Promise<Job[]> {
-    try {
-      const response = await fetch(`${this.baseUrl}/jobs`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(handleApiError({ response, data: error }).message);
-      }
-
-      const data = await response.json();
-      return data.jobs || [];
-    } catch (error) {
-      console.error('Get jobs error:', error);
-      throw error;
-    }
+    throw new Error('Endpoint /v1/jobs is not available. See api-inventory.md');
   }
 }

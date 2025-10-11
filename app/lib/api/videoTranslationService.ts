@@ -281,85 +281,25 @@ class VideoTranslationService {
   }
 
   // File Upload Methods
-  async getPresignedUrl(fileName: string, fileType: string, category: string = 'input'): Promise<PresignedUrlResponse> {
-    const response = await fetch(`${this.baseUrl}/upload/presign/put`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        fileName,
-        fileType,
-        category
-      })
-    })
-
-    return this.handleResponse<PresignedUrlResponse>(response)
+  async getPresignedUrl(): Promise<PresignedUrlResponse> {
+    throw new Error('Endpoint /v1/upload/presign/put is not available. See dichtudong-clone-api/docs/api-inventory.md')
   }
 
-  async initiateMultipartUpload(
-    fileName: string, 
-    fileType: string, 
-    fileSize: number, 
-    category: string = 'input'
-  ): Promise<MultipartInitiateResponse> {
-    const response = await fetch(`${this.baseUrl}/upload/presign/multipart/initiate`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        fileName,
-        fileType,
-        fileSize,
-        category
-      })
-    })
-
-    return this.handleResponse<MultipartInitiateResponse>(response)
+  async initiateMultipartUpload(): Promise<MultipartInitiateResponse> {
+    throw new Error('Endpoint /v1/upload/presign/multipart/initiate is not available. See api-inventory.md')
   }
 
-  async signMultipartPart(
-    key: string, 
-    uploadId: string, 
-    partNumber: number
-  ): Promise<MultipartSignPartResponse> {
-    const response = await fetch(`${this.baseUrl}/upload/presign/multipart/sign-part`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        key,
-        uploadId,
-        partNumber
-      })
-    })
-
-    return this.handleResponse<MultipartSignPartResponse>(response)
+  async signMultipartPart(): Promise<MultipartSignPartResponse> {
+    throw new Error('Endpoint /v1/upload/presign/multipart/sign-part is not available. See api-inventory.md')
   }
 
-  async completeMultipartUpload(
-    key: string, 
-    uploadId: string, 
-    parts: Array<{ PartNumber: number; ETag: string }>
-  ): Promise<{ key: string }> {
-    const response = await fetch(`${this.baseUrl}/upload/presign/multipart/complete`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        key,
-        uploadId,
-        parts
-      })
-    })
-
-    return this.handleResponse<{ key: string }>(response)
+  async completeMultipartUpload(): Promise<{ key: string }> {
+    throw new Error('Endpoint /v1/upload/presign/multipart/complete is not available. See api-inventory.md')
   }
 
   // Job Management Methods
-  async createJob(jobData: CreateJobRequest): Promise<JobResponse> {
-    const response = await fetch(`${this.baseUrl}/videos`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(jobData)
-    })
-
-    return this.handleResponse<JobResponse>(response)
+  async createJob(): Promise<JobResponse> {
+    throw new Error('Endpoint /v1/videos is not available. See api-inventory.md')
   }
 
   async uploadVideoAndCreateJob(params: {
@@ -389,77 +329,24 @@ class VideoTranslationService {
       contrast?: number
     }
   }): Promise<JobResponse> {
-    const form = new FormData()
-    if (params.file) {
-      form.append('file', params.file)
-    }
-    if (params.fileKey) {
-      form.append('fileKey', params.fileKey)
-    } else if (params.file) {
-      const inferredKey = `inputs/${params.file.name}`
-      form.append('fileKey', inferredKey)
-    }
-    form.append('sourceLang', params.sourceLang)
-    form.append('targetLang', params.targetLang)
-    form.append('model', params.model)
-    form.append('aiProvider', params.aiProvider)
-    form.append('subtitleFormat', params.subtitleFormat)
-    form.append('burnSub', String(!!params.burnSub))
-    if (typeof params.hardSub !== 'undefined') form.append('hardSub', String(!!params.hardSub))
-    if (typeof params.softSub !== 'undefined') form.append('softSub', String(!!params.softSub))
-    if (typeof params.voiceover !== 'undefined') form.append('voiceover', String(!!params.voiceover))
-    if (typeof params.audioDubbing !== 'undefined') form.append('audioDubbing', String(!!params.audioDubbing))
-    if (typeof params.audioDubbingV2 !== 'undefined') form.append('audioDubbingV2', String(!!params.audioDubbingV2))
-    if (typeof params.textOnly !== 'undefined') form.append('textOnly', String(!!params.textOnly))
-    if (params.voiceProfile) form.append('voiceProfile', params.voiceProfile)
-    if (params.glossaryId) form.append('glossaryId', params.glossaryId)
-    if (params.webhookUrl) form.append('webhookUrl', params.webhookUrl)
-    if (params.advanced) form.append('advanced', JSON.stringify(params.advanced))
-
-    const response = await fetch(`${this.baseUrl}/videos/upload`, {
-      method: 'POST',
-      headers: this.getMultipartHeaders(),
-      body: form
-    })
-
-    return this.handleResponse<JobResponse>(response)
+    throw new Error('Endpoint /v1/videos/upload is not available. See api-inventory.md')
   }
 
-  async getJobStatus(jobId: string): Promise<JobResponse> {
-    const response = await fetch(`${this.baseUrl}/jobs/${jobId}/status`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<JobResponse>(response)
+  async getJobStatus(): Promise<JobResponse> {
+    throw new Error('Endpoint /v1/jobs/:jobId/status is not available. See api-inventory.md')
   }
 
   async getJobs(): Promise<JobResponse[]> {
-    const response = await fetch(`${this.baseUrl}/jobs`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<JobResponse[]>(response)
+    throw new Error('Endpoint /v1/jobs is not available. See api-inventory.md')
   }
 
-  async cancelJob(jobId: string): Promise<{ success: boolean }> {
-    const response = await fetch(`${this.baseUrl}/videos/${jobId}/cancel`, {
-      method: 'POST',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<{ success: boolean }>(response)
+  async cancelJob(): Promise<{ success: boolean }> {
+    throw new Error('Endpoint /v1/videos/:jobId/cancel is not available. See api-inventory.md')
   }
 
   // Download Methods
-  async getDownloadUrl(outputKey: string): Promise<DownloadUrlResponse> {
-    const response = await fetch(`${this.baseUrl}/outputs/presigned?key=${outputKey}`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<DownloadUrlResponse>(response)
+  async getDownloadUrl(): Promise<DownloadUrlResponse> {
+    throw new Error('Endpoint /v1/outputs/presigned is not available. See api-inventory.md')
   }
 
   // Utility Methods
@@ -473,12 +360,7 @@ class VideoTranslationService {
 
   // AI Models API Methods
   async getAIModels(): Promise<AIModelsResponse> {
-    const response = await fetch(`${this.baseUrl}/ai-models`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<AIModelsResponse>(response)
+    throw new Error('Endpoint /v1/ai-models is not available. See api-inventory.md')
   }
 
   async getRecommendedModels(params: {
@@ -486,215 +368,67 @@ class VideoTranslationService {
     minQuality?: number
     requiredFeatures?: string[]
   } = {}): Promise<AIModelsResponse> {
-    const searchParams = new URLSearchParams()
-    if (params.maxCost) searchParams.append('maxCost', params.maxCost.toString())
-    if (params.minQuality) searchParams.append('minQuality', params.minQuality.toString())
-    if (params.requiredFeatures) searchParams.append('requiredFeatures', params.requiredFeatures.join(','))
-
-    const response = await fetch(`${this.baseUrl}/ai-models/recommended?${searchParams}`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<AIModelsResponse>(response)
+    throw new Error('Endpoint /v1/ai-models/recommended is not available. See api-inventory.md')
   }
 
-  async estimateCost(modelId: string, tokens: number): Promise<CostEstimateResponse> {
-    const response = await fetch(`${this.baseUrl}/ai-models/${modelId}/estimate-cost?tokens=${tokens}`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<CostEstimateResponse>(response)
+  async estimateCost(): Promise<CostEstimateResponse> {
+    throw new Error('Endpoint /v1/ai-models/:modelId/estimate-cost is not available. See api-inventory.md')
   }
 
   // Language Detection API Methods
-  async detectLanguage(request: LanguageDetectionRequest): Promise<LanguageDetectionResponse> {
-    const response = await fetch(`${this.baseUrl}/language-detection/detect`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<LanguageDetectionResponse>(response)
+  async detectLanguage(): Promise<LanguageDetectionResponse> {
+    throw new Error('Endpoint /v1/language-detection/detect is not available. See api-inventory.md')
   }
 
   async getSupportedLanguages(): Promise<SupportedLanguage[]> {
-    const response = await fetch(`${this.baseUrl}/language-detection/supported-languages`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<SupportedLanguage[]>(response)
+    throw new Error('Endpoint /v1/language-detection/supported-languages is not available. See api-inventory.md')
   }
 
   // Video Preview API Methods
-  async generateVideoPreview(request: VideoPreviewRequest): Promise<VideoPreviewResponse> {
-    const response = await fetch(`${this.baseUrl}/video-preview/generate`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<VideoPreviewResponse>(response)
+  async generateVideoPreview(): Promise<VideoPreviewResponse> {
+    throw new Error('Endpoint /v1/video-preview/generate is not available. See api-inventory.md')
   }
 
   // Multi-Speaker TTS API Methods
   async getVoiceProfiles(): Promise<VoiceProfilesResponse> {
-    const response = await fetch(`${this.baseUrl}/multi-speaker-tts/voice-profiles`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<VoiceProfilesResponse>(response)
+    throw new Error('Endpoint /v1/multi-speaker-tts/voice-profiles is not available. See api-inventory.md')
   }
 
-  async generateMultiSpeakerTTS(request: MultiSpeakerTTSRequest): Promise<{ success: boolean; audioKey?: string }> {
-    const response = await fetch(`${this.baseUrl}/multi-speaker-tts/generate`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<{ success: boolean; audioKey?: string }>(response)
+  async generateMultiSpeakerTTS(): Promise<{ success: boolean; audioKey?: string }> {
+    throw new Error('Endpoint /v1/multi-speaker-tts/generate is not available. See api-inventory.md')
   }
 
   // Glossary API Methods
-  async createGlossary(request: CreateGlossaryRequest): Promise<Glossary> {
-    const response = await fetch(`${this.baseUrl}/glossary`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<Glossary>(response)
+  async createGlossary(): Promise<Glossary> {
+    throw new Error('Endpoint /v1/glossary (POST) is not available. See api-inventory.md')
   }
 
   async getGlossaries(): Promise<Glossary[]> {
-    const response = await fetch(`${this.baseUrl}/glossary`, {
-      method: 'GET',
-      headers: this.getHeaders()
-    })
-
-    return this.handleResponse<Glossary[]>(response)
+    throw new Error('Endpoint /v1/glossary (GET) is not available. See api-inventory.md')
   }
 
-  async searchGlossary(request: GlossarySearchRequest): Promise<GlossarySearchResponse> {
-    const response = await fetch(`${this.baseUrl}/glossary/search`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<GlossarySearchResponse>(response)
+  async searchGlossary(): Promise<GlossarySearchResponse> {
+    throw new Error('Endpoint /v1/glossary/search is not available. See api-inventory.md')
   }
 
   // Subtitle Management API Methods
-  async importSubtitle(jobId: string, request: ImportSubtitleRequest): Promise<{ success: boolean }> {
-    const response = await fetch(`${this.baseUrl}/videos/${jobId}/import-subtitle`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<{ success: boolean }>(response)
+  async importSubtitle(): Promise<{ success: boolean }> {
+    throw new Error('Endpoint /v1/videos/:jobId/import-subtitle is not available. See api-inventory.md')
   }
 
-  async validateSubtitle(jobId: string, request: ValidateSubtitleRequest): Promise<{ valid: boolean; errors?: string[] }> {
-    const response = await fetch(`${this.baseUrl}/videos/${jobId}/validate-subtitle`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(request)
-    })
-
-    return this.handleResponse<{ valid: boolean; errors?: string[] }>(response)
+  async validateSubtitle(): Promise<{ valid: boolean; errors?: string[] }> {
+    throw new Error('Endpoint /v1/videos/:jobId/validate-subtitle is not available. See api-inventory.md')
   }
 
   // File Upload Helper
-  async uploadFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
+  async uploadFile(): Promise<string> {
     const maxSize = 100 * 1024 * 1024 // 100MB threshold for multipart
-
-    if (file.size < maxSize) {
-      return this.uploadSmallFile(file, onProgress)
-    } else {
-      return this.uploadLargeFile(file, onProgress)
-    }
+    throw new Error('Upload endpoints are not available. See api-inventory.md')
   }
 
-  private async uploadSmallFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
-    // Get presigned URL
-    const presignResponse = await this.getPresignedUrl(file.name, file.type, 'input')
-    
-    // Upload to S3
-    const uploadResponse = await fetch(presignResponse.url, {
-      method: 'PUT',
-      body: file,
-      headers: {
-        'Content-Type': file.type
-      }
-    })
+  private async uploadSmallFile(): Promise<string> { throw new Error('Not available') }
 
-    if (!uploadResponse.ok) {
-      throw new Error('Upload failed')
-    }
-
-    onProgress?.(100)
-    return presignResponse.key
-  }
-
-  private async uploadLargeFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
-    const chunkSize = 5 * 1024 * 1024 // 5MB chunks
-    const totalChunks = Math.ceil(file.size / chunkSize)
-
-    // Initiate multipart upload
-    const initiateResponse = await this.initiateMultipartUpload(
-      file.name, 
-      file.type, 
-      file.size, 
-      'input'
-    )
-
-    const { key, uploadId } = initiateResponse
-    const parts: Array<{ PartNumber: number; ETag: string }> = []
-
-    // Upload chunks
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * chunkSize
-      const end = Math.min(start + chunkSize, file.size)
-      const chunk = file.slice(start, end)
-
-      // Get presigned URL for chunk
-      const signResponse = await this.signMultipartPart(key, uploadId, i + 1)
-
-      // Upload chunk
-      const uploadResponse = await fetch(signResponse.url, {
-        method: 'PUT',
-        body: chunk
-      })
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Chunk ${i + 1} upload failed`)
-      }
-
-      const etag = uploadResponse.headers.get('ETag')
-      if (!etag) {
-        throw new Error(`No ETag received for chunk ${i + 1}`)
-      }
-
-      parts.push({
-        PartNumber: i + 1,
-        ETag: etag
-      })
-
-      // Update progress
-      const progress = ((i + 1) / totalChunks) * 100
-      onProgress?.(progress)
-    }
-
-    // Complete multipart upload
-    await this.completeMultipartUpload(key, uploadId, parts)
-    return key
-  }
+  private async uploadLargeFile(): Promise<string> { throw new Error('Not available') }
 }
 
 export const videoTranslationService = new VideoTranslationService()

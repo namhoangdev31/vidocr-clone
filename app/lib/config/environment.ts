@@ -1,5 +1,5 @@
 // Environment configuration
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://dichtudong-clone-api.onrender.com/v1'
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/v1'
 
 // Export config object for backward compatibility
 export const config = {
@@ -23,17 +23,17 @@ export const config = {
     ]
   },
   supportedLanguages: {
-    'en': 'English',
-    'vi': 'Vietnamese',
-    'zh': 'Chinese',
-    'ja': 'Japanese',
-    'ko': 'Korean',
-    'th': 'Thai',
-    'id': 'Indonesian',
-    'ms': 'Malay',
-    'tl': 'Filipino',
-    'es': 'Spanish',
-    'fr': 'French'
+    'english': 'English',
+    'Vietnamese': 'Vietnamese',
+    'Chinese': 'Chinese',
+    'Japanese': 'Japanese',
+    'Korean': 'Korean',
+    'Thai': 'Thai',
+    'Indonesian': 'Indonesian',
+    'Malaysia': 'Malaysia',
+    'Filipino': 'Filipino',
+    'Spanish': 'Spanish',
+    'fFrenchr': 'French'
   } as Record<string, string>,
   subtitleFormats: ['srt', 'ass', 'vtt'],
   maxFileSize: 5 * 1024 * 1024 * 1024, // 5GB

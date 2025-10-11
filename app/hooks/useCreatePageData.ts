@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { videoTranslationService } from '@/app/lib/api/videoTranslationService'
-import { AIModel, VoiceProfile, Glossary } from '@/app/lib/api/videoTranslationService'
+// Temporarily avoid backend calls until endpoints are documented in api-inventory.md
+// import { videoTranslationService } from '@/app/lib/api/videoTranslationService'
+import type { AIModel, VoiceProfile, Glossary } from '@/app/lib/api/videoTranslationService'
+import { AI_MODELS } from '@/app/lib/config/environment'
 
 export interface UseCreatePageDataReturn {
   // AI Models
@@ -32,59 +34,24 @@ export function useCreatePageData(): UseCreatePageDataReturn {
 
   // Load initial data
   useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
-
-        // Load AI models, voice profiles, and glossaries in parallel
-        const [modelsResponse, voiceResponse, glossariesResponse] = await Promise.all([
-          videoTranslationService.getAIModels(),
-          videoTranslationService.getVoiceProfiles(),
-          videoTranslationService.getGlossaries()
-        ])
-
-        setAiModels(modelsResponse.models)
-        setVoiceProfiles(voiceResponse.profiles)
-        setGlossaries(glossariesResponse)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load data')
-        console.error('Failed to load initial data:', err)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadInitialData()
+    // Use local defaults only; skip calling backend until documented endpoints exist
+    setIsLoading(true)
+    setAiModels(AI_MODELS as unknown as AIModel[])
+    setVoiceProfiles([])
+    setGlossaries([])
+    setIsLoading(false)
   }, [])
 
   // Estimate cost function
-  const estimateCost = async (modelId: string, tokens: number): Promise<number | null> => {
-    try {
-      setIsEstimating(true)
-      setError(null)
-      const result = await videoTranslationService.estimateCost(modelId, tokens)
-      return result.estimatedCost
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to estimate cost')
-      return null
-    } finally {
-      setIsEstimating(false)
-    }
+  const estimateCost = async (): Promise<number | null> => {
+    // API not available; return null without errors
+    return null
   }
 
   // Detect language function
-  const detectLanguage = async (audioS3Key: string): Promise<string | null> => {
-    try {
-      const result = await videoTranslationService.detectLanguage({
-        audioS3Key,
-        model: 'gpt-4o-mini'
-      })
-      return result.result.language
-    } catch (err) {
-      console.error('Language detection failed:', err)
-      return null
-    }
+  const detectLanguage = async (): Promise<string | null> => {
+    // API not available; return null without errors
+    return null
   }
 
   return {

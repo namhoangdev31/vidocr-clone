@@ -2,10 +2,10 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useJobManagement } from '@/app/hooks/useJobManagement'
 import { useWebSocket } from '@/app/hooks/useWebSocket'
-import { JobResponse } from '@/app/lib/api/videoTranslationService'
-import { STAGE_DISPLAY_NAMES } from '@/app/lib/config/environment'
+import { STAGE_DISPLAY_NAMES, API_BASE_URL } from '@/app/lib/config/environment'
+import { apiClient } from '@/app/lib/api'
+import { io, Socket } from 'socket.io-client'
 
 type ProgressStatus = 'processing' | 'queued' | 'completed' | 'failed' | 'paused'
 
@@ -18,14 +18,7 @@ type JobItem = {
   progressPct: number
   stage?: string
   message?: string
-  createdAt?: string
-  outputs?: {
-    srtKey?: string
-    assKey?: string
-    vttKey?: string
-    mp4Key?: string
-    voiceKey?: string
-  }
+  previewUrl?: string
 }
 
 const statusLabel: Record<ProgressStatus, string> = {
@@ -40,35 +33,121 @@ export default function ProgressPage() {
   const router = useRouter()
   const [filter, setFilter] = useState<'all' | 'processing' | 'completed' | 'queued'>('all')
 
-  // API integration
-  const { 
-    jobs: apiJobs, 
-    isLoading, 
-    error, 
-    refreshJobs, 
-    cancelJob 
-  } = useJobManagement({
-    autoRefresh: true,
-    refreshInterval: 5000
-  })
+  // API integration via /videos/nts/requests
+  const [reqIds, setReqIds] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [socket, setSocket] = useState<Socket | null>(null)
+  const [reqStatus, setReqStatus] = useState<Record<string, { progressPct: number; stage?: string; status?: ProgressStatus; message?: string; videoUrl?: string; filePath?: string }>>({})
+
+  const refreshJobs = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const res = await apiClient.get('/videos/nts/requests')
+      const ids: string[] = res?.data?.data?.reqIds || []
+      setReqIds(ids)
+    } catch (e: any) {
+      const message = e?.response?.data?.message || e?.message || 'Failed to load requests'
+      setError(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    // Load once then subscribe via WS
+    (async () => {
+      await refreshJobs()
+    })()
+  }, [])
+
+  // Connect to WS after we have reqIds
+  useEffect(() => {
+    if (reqIds.length === 0) return
+
+    const wsUrl = API_BASE_URL.replace('/v1', '') + '/check-task'
+    const s = io(wsUrl, { transports: ['websocket', 'polling'] })
+    setSocket(s)
+
+    s.on('connect', () => {
+      s.emit('check-task:start', { reqIds })
+    })
+
+    s.on('check-task:update', ({ reqId, data, error }: any) => {
+      // Map backend dbStatus/running states to UI statuses
+      const raw = (data?.dbStatus || data?.status || '').toString().toLowerCase()
+      let mapped: ProgressStatus = 'queued'
+      if (raw === 'running' || raw === 'processing') mapped = 'processing'
+      else if (raw === 'pending' || raw === 'queued') mapped = 'queued'
+      else if (raw === 'success' || raw === 'completed' || raw === 'complete') mapped = 'completed'
+      else if (raw === 'failed' || raw === 'error') mapped = 'failed'
+
+      setReqStatus(prev => ({
+        ...prev,
+        [reqId]: {
+          progressPct: typeof data?.progress === 'number' ? data.progress : (prev[reqId]?.progressPct || 0),
+          stage: data?.stage || prev[reqId]?.stage,
+          status: mapped || prev[reqId]?.status,
+          message: data?.message || prev[reqId]?.message,
+          videoUrl: data?.videoUrl || prev[reqId]?.videoUrl,
+          filePath: data?.filePath || prev[reqId]?.filePath,
+        }
+      }))
+    })
+
+    s.on('check-task:completed', (_payload: any) => {
+      // Could show a toast or trigger refresh if needed
+    })
+
+    s.on('check-task:error', (payload: any) => {
+      setError(payload?.message || 'WebSocket error')
+    })
+
+    return () => {
+      try { s.emit('check-task:stop') } catch {}
+      s.disconnect()
+      setSocket(null)
+    }
+  }, [reqIds])
 
   const { isConnected: isWebSocketConnected } = useWebSocket()
 
   // Convert API jobs to display format
   const jobs: JobItem[] = useMemo(() => {
-    return apiJobs.map((job: JobResponse) => ({
-      id: job.id,
-      name: `Job_${job.id.slice(-8)}.mp4`, // Generate a display name
-      sizeMb: 0, // This would need to come from the API
-      durationMin: 0, // This would need to come from the API
-      status: job.status as ProgressStatus,
-      progressPct: job.progress || 0,
-      stage: job.stage,
-      message: job.message,
-      createdAt: job.createdAt,
-      outputs: job.outputs
-    }))
-  }, [apiJobs])
+    return reqIds.map((id: string) => {
+      const st = reqStatus[id]
+      // Derive display name from filePath or videoUrl
+      let displayName = `Req_${id.slice(0, 8)}`
+      const filePath = st?.filePath || ''
+      const videoUrl = st?.videoUrl || ''
+      const source = filePath || videoUrl
+      if (source) {
+        const base = source.split('/')
+        const last = base[base.length - 1]
+        if (last) displayName = last
+      }
+
+      // Build absolute preview URL if videoUrl exists
+      let previewUrl: string | undefined = undefined
+      if (st?.videoUrl) {
+        const origin = API_BASE_URL.replace('/v1', '')
+        previewUrl = origin + st.videoUrl
+      }
+
+      return {
+        id,
+        name: displayName,
+        sizeMb: 0,
+        durationMin: 0,
+        status: st?.status || 'queued',
+        progressPct: st?.progressPct || 0,
+        stage: st?.stage,
+        message: st?.message,
+        previewUrl,
+      }
+    })
+  }, [reqIds, reqStatus])
 
   const filtered = useMemo(() => {
     if (filter === 'all') return jobs
@@ -84,28 +163,9 @@ export default function ProgressPage() {
     }
   }, [jobs])
 
-  const actionPause = async (id: string) => {
-    try {
-      await cancelJob(id)
-      // Job status will be updated via WebSocket
-    } catch (error) {
-      console.error('Failed to pause job:', error)
-    }
-  }
-  
-  const actionResume = (id: string) => {
-    // Resume functionality would need to be implemented in the API
-    console.log('Resume job:', id)
-  }
-  
-  const actionDelete = async (id: string) => {
-    try {
-      await cancelJob(id)
-      // Job will be removed from the list via API refresh
-    } catch (error) {
-      console.error('Failed to delete job:', error)
-    }
-  }
+  const actionPause = async (_id: string) => {}
+  const actionResume = (_id: string) => {}
+  const actionDelete = async (_id: string) => {}
 
   return (
     <div className="px-8 py-8 bg-gray-900 min-h-full">
@@ -164,60 +224,67 @@ export default function ProgressPage() {
           ))}
         </div>
 
-        {/* List */}
-        <div className="space-y-4">
-          {filtered.map(job => (
-            <div key={job.id} className="bg-gray-800 rounded-lg p-4 flex items-center cursor-pointer" onClick={() => router.push(`/progress/${job.id}`)}>
-              {/* Thumbnail placeholder */}
-              <div className="w-20 h-12 bg-gray-700 rounded mr-4" />
-
-              <div className="flex-1">
-                <div className="flex items-center gap-3">
-                  <h4 className="text-white text-sm font-medium">{job.name}</h4>
-                  <span className={`text-xs px-2 py-0.5 rounded ${job.status === 'completed' ? 'bg-emerald-600/20 text-emerald-300' : job.status === 'processing' ? 'bg-blue-600/20 text-blue-300' : job.status === 'queued' ? 'bg-yellow-600/20 text-yellow-300' : job.status === 'failed' ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}`}>{statusLabel[job.status]}</span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  {job.sizeMb > 0 ? `${job.sizeMb}MB` : 'Unknown size'} • {job.durationMin > 0 ? `${job.durationMin} phút` : 'Unknown duration'}
-                </div>
-
-                {/* Progress */}
-                {(job.status === 'processing' || job.status === 'queued') && (
-                  <div className="mt-2">
-                    <div className="w-full h-2 bg-gray-700 rounded">
-                      <div className="h-2 bg-blue-600 rounded" style={{ width: `${job.progressPct}%` }} />
-                    </div>
-                    <div className="text-[10px] text-gray-400 mt-1">
-                      {job.progressPct}% {job.stage && `• ${STAGE_DISPLAY_NAMES[job.stage as keyof typeof STAGE_DISPLAY_NAMES] || job.stage}`}
-                    </div>
-                    {job.message && (
-                      <div className="text-[10px] text-gray-500 mt-1">{job.message}</div>
-                    )}
-                  </div>
-                )}
+        {/* Grouped Lists by Status */}
+        {(['processing', 'queued', 'completed', 'failed'] as ProgressStatus[]).map((st) => {
+          const list = jobs.filter(j => j.status === st)
+          if (list.length === 0) return null
+          return (
+            <div key={st} className="mb-8">
+              <div className="flex items-center gap-3 mb-3">
+                <h3 className="text-white text-sm font-semibold">
+                  {st === 'processing' ? 'Đang xử lý' : st === 'queued' ? 'Chờ xử lý' : st === 'completed' ? 'Hoàn thành' : 'Lỗi'}
+                </h3>
+                <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{list.length}</span>
               </div>
+              <div className="space-y-3">
+                {list.map(job => (
+                  <div key={job.id} className="bg-gray-800 rounded-lg p-4 flex items-center cursor-pointer" onClick={() => router.push(`/progress/${job.id}`)}>
+                    {/* Thumbnail / Preview */}
+                    {job.previewUrl ? (
+                      <div className="w-20 h-12 bg-black rounded mr-4 overflow-hidden">
+                        <video src={job.previewUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                      </div>
+                    ) : (
+                      <div className="w-20 h-12 bg-gray-700 rounded mr-4" />
+                    )}
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 ml-4">
-                {job.status === 'processing' ? (
-                  <button onClick={() => actionPause(job.id)} className="w-8 h-8 rounded bg-gray-700 text-gray-200 hover:bg-gray-600" title="Tạm dừng">
-                    ❚❚
-                  </button>
-                ) : job.status === 'paused' ? (
-                  <button onClick={() => actionResume(job.id)} className="w-8 h-8 rounded bg-gray-700 text-gray-200 hover:bg-gray-600" title="Tiếp tục">
-                    ▶
-                  </button>
-                ) : (
-                  <button onClick={(e) => { e.stopPropagation(); router.push(`/progress/${job.id}`) }} className="w-8 h-8 rounded bg-gray-700 text-gray-200 hover:bg-gray-600" title="Xem">
-                    ⤓
-                  </button>
-                )}
-                <button onClick={() => actionDelete(job.id)} className="w-8 h-8 rounded bg-gray-700 text-gray-200 hover:bg-gray-600" title="Xóa">
-                  🗑
-                </button>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-white text-sm font-medium truncate max-w-[260px]" title={job.name}>{job.name}</h4>
+                        <span className={`text-xs px-2 py-0.5 rounded ${job.status === 'completed' ? 'bg-emerald-600/20 text-emerald-300' : job.status === 'processing' ? 'bg-blue-600/20 text-blue-300' : job.status === 'queued' ? 'bg-yellow-600/20 text-yellow-300' : job.status === 'failed' ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}`}>{statusLabel[job.status]}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {job.sizeMb > 0 ? `${job.sizeMb}MB` : 'Unknown size'} • {job.durationMin > 0 ? `${job.durationMin} phút` : 'Unknown duration'}
+                      </div>
+
+                      {/* Progress */}
+                      {(job.status === 'processing' || job.status === 'queued') && (
+                        <div className="mt-2">
+                          <div className="w-full h-2 bg-gray-700 rounded">
+                            <div className="h-2 bg-blue-600 rounded" style={{ width: `${job.progressPct}%` }} />
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-1">
+                            {job.progressPct}% {job.stage && `• ${STAGE_DISPLAY_NAMES[job.stage as keyof typeof STAGE_DISPLAY_NAMES] || job.stage}`}
+                          </div>
+                          {job.message && (
+                            <div className="text-[10px] text-gray-500 mt-1">{job.message}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 ml-4">
+                      <button onClick={(e) => { e.stopPropagation(); router.push(`/progress/${job.id}`) }} className="w-8 h-8 rounded bg-gray-700 text-gray-200 hover:bg-gray-600" title="Xem">
+                        ⤓
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          )
+        })}
 
         {/* Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">

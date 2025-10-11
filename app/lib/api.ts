@@ -97,10 +97,8 @@ export interface TranslateSubtitleItemResponse {
 }
 
 export const translationAPI = {
-  translateText: async (payload: TranslateSubtitleItemRequest): Promise<TranslateSubtitleItemResponse> => {
-    // Legacy endpoint - use videoTranslationService instead
-    const response = await apiClient.post<TranslateSubtitleItemResponse>('/translate/text', payload)
-    return response.data
+  translateText: async (): Promise<TranslateSubtitleItemResponse> => {
+    throw new Error('Endpoint /v1/translate/text is not available. See dichtudong-clone-api/docs/api-inventory.md')
   }
 }
 
