@@ -75,6 +75,7 @@ export type VideoEditorProps = {
   onUpload: (file: File) => void
   onRemoveVideo?: () => void
   onDurationChange?: (duration: number) => void
+  onHeaderAction?: (actionId: string) => void
   onSeek?: (seconds: number) => void
   onUpdateTrackItem?: (params: {
     trackId: string

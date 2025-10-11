@@ -14,6 +14,7 @@ import {
 import { apiClient } from '@/app/lib/api'
 import { API_BASE_URL } from '@/app/lib/config/environment'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { ExportDialog, ExportSettings } from './video-editor/ExportDialog'
 
 const DEFAULT_TRANSCRIPTS: TranscriptEntry[] = [
   {
@@ -133,6 +134,8 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   const [downloadUrls, setDownloadUrls] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [lastExportSettings, setLastExportSettings] = useState<ExportSettings | null>(null)
 
   useEffect(() => {
     return () => {
@@ -333,6 +336,17 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+  }
+
+  const downloadSrtFromTranscripts = () => {
+    const ms = (s: number) => Math.max(0, Math.round(s * 1000))
+    const srt = cuesToSrt(
+      (transcripts || []).map((t, i) => ({ id: t.id || `c${i + 1}`, startMs: ms(t.start), endMs: ms(t.end), text: t.primaryText }))
+    )
+    const blob = new Blob([srt], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    downloadFile(url, (lastExportSettings?.title || videoSource?.name || 'export') + '.srt')
+    URL.revokeObjectURL(url)
   }
 
   const deriveTranscripts = useCallback((nextTracks: TimelineTrack[]): TranscriptEntry[] => {
@@ -734,6 +748,11 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
           setVideoSource((prev) => (prev ? { ...prev, duration } : prev))
         }}
   onUpdateTrackItem={handleUpdateTrackItem}
+        onHeaderAction={(id) => {
+          if (id === 'publish') {
+            setExportOpen(true)
+          }
+        }}
         onApplyTranscripts={(entries) => {
           // Convert transcript entries to timeline items and replace text track items
           setTracks((prev) =>
@@ -764,6 +783,29 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         onUpdateTrackItemMeta={handleUpdateTrackItemMeta}
         onSeek={(sec) => {
           // keep same behavior
+        }}
+      />
+
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        video={videoSource}
+        duration={videoSource?.duration ?? timelineDuration}
+        onDownloadBackup={downloadUrls.mp4Key ? () => downloadFile(downloadUrls.mp4Key, videoSource?.name || 'video.mp4') : undefined}
+        onDownloadSrt={transcripts?.length ? downloadSrtFromTranscripts : undefined}
+        onSave={(s) => {
+          setLastExportSettings(s)
+          setExportOpen(false)
+        }}
+        onPublish={async (s) => {
+          setLastExportSettings(s)
+          setExportOpen(false)
+          // For now, soft export with embedded subtitles via MKV (client-side). Later integrate server render.
+          try {
+            await exportSoft()
+          } catch (e) {
+            // exportSoft already alerts on error
+          }
         }}
       />
     </div>

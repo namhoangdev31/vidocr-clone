@@ -25,6 +25,7 @@ export function VideoEditor({
   onApplyTranscripts,
   onDeleteTrackItem,
   onUpdateTrackItemMeta,
+  onHeaderAction,
 }: VideoEditorProps) {
   const [selected, setSelected] = useState<{ trackId: string; itemId: string } | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -152,7 +153,7 @@ export function VideoEditor({
     <div className="flex bg-slate-900 text-white h-full overflow-hidden">
       <Toolbar items={effectiveToolbarItems} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <EditorHeader info={headerInfo} />
+  <EditorHeader info={headerInfo} onAction={onHeaderAction} />
 
         <div className="flex-1 flex min-h-0 items-stretch overflow-hidden">
           <div ref={centerRef} className="flex-1 flex flex-col gap-6 p-6 min-h-0 min-w-0 overflow-hidden">
