@@ -8,6 +8,7 @@ import CreatePage from "./components/CreatePage";
 import TestAPI from "./components/TestAPI";
 import ProgressPage from "./components/ProgressPage";
 import { AffiliateDashboard } from "./components/affiliate";
+import UserSettings from "./components/UserSettings";
 // Progress detail có route riêng: /progress/[id]
 
 export default function Page() {
@@ -25,6 +26,8 @@ export default function Page() {
         return <TestAPI />;
       case "affiliate":
         return <AffiliateDashboard />;
+        case "user" : 
+        return <UserSettings />
       default:
         return <CreatePage />;
     }
