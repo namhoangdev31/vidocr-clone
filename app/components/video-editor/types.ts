@@ -36,6 +36,7 @@ export type TimelineItem = {
   end: number
   color: string
   type?: 'clip' | 'effect' | 'text'
+  meta?: Record<string, any>
 }
 
 export type TimelineThumbnail = {
@@ -74,6 +75,7 @@ export type VideoEditorProps = {
   onUpload: (file: File) => void
   onRemoveVideo?: () => void
   onDurationChange?: (duration: number) => void
+  onHeaderAction?: (actionId: string) => void
   onSeek?: (seconds: number) => void
   onUpdateTrackItem?: (params: {
     trackId: string
@@ -81,4 +83,7 @@ export type VideoEditorProps = {
     start?: number
     end?: number
   }) => void
+  onUpdateTrackItemMeta?: (params: { trackId: string; itemId: string; meta: Record<string, any> }) => void
+  onDeleteTrackItem?: (params: { trackId: string; itemId: string }) => void
+  onApplyTranscripts?: (entries: TranscriptEntry[]) => void
 }

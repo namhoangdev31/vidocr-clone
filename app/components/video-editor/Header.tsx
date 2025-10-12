@@ -30,9 +30,10 @@ function AvatarStack({ avatars }: { avatars?: string[] }) {
 
 type HeaderProps = {
   info: HeaderInfo
+  onAction?: (actionId: string) => void
 }
 
-export function EditorHeader({ info }: HeaderProps) {
+export function EditorHeader({ info, onAction }: HeaderProps) {
   return (
     <header className="h-20 border-b border-slate-800 bg-slate-900/60 backdrop-blur-sm flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
@@ -57,6 +58,7 @@ export function EditorHeader({ info }: HeaderProps) {
                 ? 'bg-sky-500 hover:bg-sky-400 text-white disabled:bg-slate-700 disabled:text-slate-400'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:text-slate-500'
             }`}
+            onClick={() => onAction?.(action.id)}
           >
             {action.label}
           </button>

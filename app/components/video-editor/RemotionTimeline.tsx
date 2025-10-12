@@ -1,9 +1,8 @@
-'use client'
+"use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Player, PlayerRef } from '@remotion/player'
-import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
-import { TimelineTrack } from './types'
+import React, { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import type { TimelineTrack } from './types'
+import './timeline-zoom-fix.css'
 
 const LABEL_WIDTH = 180
 const MARKER_HEIGHT = 36
@@ -14,95 +13,66 @@ const PADDING_Y = 20
 const BASE_PIXEL_PER_SECOND = 120
 const THUMB_CAPTURE_HEIGHT = 120
 
-const generateVideoThumbnails = async (
-  src: string,
-  thumbnails: TimelineTrack['thumbnails'] = [],
-): Promise<string[]> => {
-  if (!src || !thumbnails?.length) return []
-
-  const video = document.createElement('video')
-  video.src = src
-  video.muted = true
-  video.crossOrigin = 'anonymous'
-  video.preload = 'auto'
-  video.playsInline = true
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const onLoaded = () => resolve()
-      const onError = () => reject(new Error('Failed to load video'))
-      video.addEventListener('loadeddata', onLoaded, { once: true })
-      video.addEventListener('error', onError, { once: true })
-    })
-  } catch (error) {
-    return []
-  }
-
-  const durationSeconds = Number.isFinite(video.duration) ? video.duration : undefined
-  const aspect = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9
-  const canvas = document.createElement('canvas')
-  canvas.height = Math.max(THUMB_CAPTURE_HEIGHT, ROW_HEIGHT)
-  canvas.width = Math.max(Math.round(canvas.height * aspect), 2)
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return []
-
-  const results: string[] = []
-
-  const captureAt = (time: number) =>
-    new Promise<void>((resolve, reject) => {
-      const targetTime = Math.max(0, Math.min(time, (durationSeconds ?? time)))
-      const onSeeked = () => {
-        try {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          results.push(canvas.toDataURL('image/jpeg', 0.7))
-          resolve()
-        } catch (err) {
-          reject(err)
-        }
-      }
-      const onError = (err: Event) => reject(err as any)
-      video.addEventListener('seeked', onSeeked, { once: true })
-      video.addEventListener('error', onError, { once: true })
-      try {
-        video.currentTime = Number.isFinite(targetTime) ? targetTime : 0
-      } catch (err) {
-        reject(err)
-      }
-    })
-
-  for (const thumb of thumbnails) {
-    const time = Number.isFinite(thumb.time) ? thumb.time : 0
-    try {
-      await captureAt(time)
-    } catch (err) {
-      // skip frame on failure
-    }
-  }
-
-  return results
+function formatTimestamp(seconds: number) {
+  const s = Math.floor(Math.max(0, seconds))
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-const formatTimestamp = (seconds: number) => {
-  if (!Number.isFinite(seconds)) return '00:00'
-  const totalSeconds = Math.max(0, Math.round(seconds))
-  const minutes = Math.floor(totalSeconds / 60)
-  const secs = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-}
-
-const pickTickInterval = (duration: number) => {
-  if (duration <= 30) return 1
-  if (duration <= 120) return 5
-  if (duration <= 300) return 10
-  if (duration <= 900) return 30
+function pickTickInterval(duration: number) {
+  if (duration <= 10) return 1
+  if (duration <= 30) return 2
+  if (duration <= 60) return 5
+  if (duration <= 3 * 60) return 10
+  if (duration <= 10 * 60) return 30
   return 60
 }
 
-type TimelineCompositionProps = {
+type ThumbnailSpec = { time: number; duration?: number }
+
+async function generateVideoThumbnails(src: string, thumbs: ThumbnailSpec[]): Promise<string[]> {
+  const video = document.createElement('video')
+  video.crossOrigin = 'anonymous'
+  video.src = src
+  video.muted = true
+  video.playsInline = true
+
+  await new Promise<void>((resolve, reject) => {
+    const onLoaded = () => resolve()
+    const onError = () => reject(new Error('Failed to load video'))
+    video.addEventListener('loadedmetadata', onLoaded, { once: true })
+    video.addEventListener('error', onError, { once: true })
+  })
+
+  const ratio = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(THUMB_CAPTURE_HEIGHT * ratio))
+
+  const ctx = canvas.getContext('2d')!
+
+  const results: string[] = []
+  for (const spec of thumbs) {
+    const t = Math.max(0, Math.min(video.duration || spec.time, spec.time))
+    await new Promise<void>((resolve) => {
+      const onSeeked = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        results.push(canvas.toDataURL('image/jpeg', 0.7))
+        video.removeEventListener('seeked', onSeeked)
+        resolve()
+      }
+      video.addEventListener('seeked', onSeeked)
+      try { video.currentTime = t } catch { resolve() }
+    })
+  }
+  return results
+}
+
+type CompositionProps = {
   tracks: TimelineTrack[]
   durationInSeconds: number
   pxPerSecond: number
-  thumbnailMap: Record<string, string[]>
+  thumbnailMap: Record<string, { specs: ThumbnailSpec[]; images: string[] }>
   draggingItem: { trackId: string; itemId: string } | null
   onBeginDrag?: (params: {
     trackId: string
@@ -111,580 +81,564 @@ type TimelineCompositionProps = {
     clientX: number
     start: number
     end: number
-    isTextTrack: boolean
+    isTextTrack?: boolean
   }) => void
+  onSeek?: (seconds: number) => void
+  onSelect?: (trackId: string, itemId: string) => void
+  selected: { trackId: string; itemId: string } | null
+  onUpdateTrackItemMeta?: (trackId: string, itemId: string, meta: Record<string, any>) => void
+  currentTime: number
 }
 
-const TimelineComposition: React.FC<TimelineCompositionProps> = ({
-  tracks,
-  durationInSeconds,
-  pxPerSecond,
-  thumbnailMap,
-  draggingItem,
-  onBeginDrag,
-}) => {
-  const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
-  const currentSeconds = durationInSeconds > 0 && fps > 0 ? Math.min(durationInSeconds, frame / fps) : 0
+function TimelineComposition({ tracks, durationInSeconds, pxPerSecond, thumbnailMap, draggingItem, onBeginDrag, onSeek, onSelect, selected, currentTime }: CompositionProps) {
+  // Use passed currentTime instead of Remotion frame
+  const currentSeconds = currentTime
   const timelineWidth = Math.max(1, durationInSeconds) * pxPerSecond
   const totalRowsHeight = tracks.length > 0 ? tracks.length * ROW_HEIGHT + Math.max(0, tracks.length - 1) * ROW_GAP : ROW_HEIGHT
   const tickInterval = pickTickInterval(durationInSeconds)
+
   const ticks = useMemo(() => {
     const list: number[] = []
-    if (durationInSeconds <= 0) {
-      list.push(0)
-      return list
-    }
-    for (let t = 0; t <= durationInSeconds + 0.001; t += tickInterval) {
-      list.push(Number(t.toFixed(2)))
-    }
-    if (list[list.length - 1] < durationInSeconds) {
-      list.push(durationInSeconds)
-    }
+    if (durationInSeconds <= 0) { list.push(0); return list }
+    for (let t = 0; t <= durationInSeconds + 0.001; t += tickInterval) list.push(Number(t.toFixed(2)))
+    if (list[list.length - 1] < durationInSeconds) list.push(durationInSeconds)
     return list
   }, [durationInSeconds, tickInterval])
 
   const playheadLeft = currentSeconds * pxPerSecond
+
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: '#0f172a',
-        color: '#e2e8f0',
-        fontFamily: 'Inter, ui-sans-serif, system-ui',
-        padding: `${PADDING_Y}px ${PADDING_X}px`,
-      }}
-    >
-      <div style={{ display: 'flex', height: '100%', gap: 16 }}>
-        <div style={{ width: LABEL_WIDTH }}>
-          <div style={{ height: MARKER_HEIGHT }} />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {tracks.map((track, index) => (
-              <div
-                key={track.id}
-                style={{
-                  height: ROW_HEIGHT,
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 12px',
-                  borderRadius: 8,
-                  background: 'rgba(71, 85, 105, 0.25)',
-                  border: '1px solid rgba(71, 85, 105, 0.3)',
-                  color: '#f8fafc',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  marginBottom: index === tracks.length - 1 ? 0 : ROW_GAP,
-                }}
-              >
-                <span>{track.label}</span>
+    <div style={{ position: 'relative', width: timelineWidth, height: MARKER_HEIGHT + totalRowsHeight, background: 'rgba(15, 23, 42, 0.65)', borderRadius: 16, border: '1px solid rgba(100, 116, 139, 0.25)', boxShadow: '0 12px 25px rgba(15, 23, 42, 0.45) inset', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: MARKER_HEIGHT }}>
+          {ticks.map((tick) => {
+            const left = tick * pxPerSecond
+            return (
+              <div key={`tick-${tick}`} style={{ position: 'absolute', left }}>
+                <div style={{ position: 'absolute', bottom: 2, height: MARKER_HEIGHT - 10, width: 1, background: 'rgba(148, 163, 184, 0.4)' }} />
+                <div style={{ position: 'absolute', bottom: MARKER_HEIGHT - 6, transform: 'translateX(-50%)', fontSize: 11, color: '#94a3b8' }}>{formatTimestamp(tick)}</div>
               </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
 
-        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          <div
-            style={{
-              position: 'relative',
-              width: timelineWidth,
-              height: MARKER_HEIGHT + totalRowsHeight,
-              background: 'rgba(15, 23, 42, 0.65)',
-              borderRadius: 16,
-              border: '1px solid rgba(100, 116, 139, 0.25)',
-              boxShadow: '0 12px 25px rgba(15, 23, 42, 0.45) inset',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: MARKER_HEIGHT }}>
-              {ticks.map((tick) => {
-                const left = tick * pxPerSecond
-                return (
-                  <div key={`tick-${tick}`} style={{ position: 'absolute', left }}>
-                    <div
-                      style={{
-                        position: 'absolute',
-                        bottom: 2,
-                        height: MARKER_HEIGHT - 10,
-                        width: 1,
-                        background: 'rgba(148, 163, 184, 0.4)',
-                      }}
-                    />
-                    <div
-                      style={{
-                        position: 'absolute',
-                        bottom: MARKER_HEIGHT - 6,
-                        transform: 'translateX(-50%)',
-                        fontSize: 11,
-                        color: '#94a3b8',
-                      }}
-                    >
-                      {formatTimestamp(tick)}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+        <div style={{ position: 'absolute', top: MARKER_HEIGHT, left: 0, right: 0, height: totalRowsHeight }}>
+          {tracks.map((track, index) => {
+            const top = index * (ROW_HEIGHT + ROW_GAP)
+            const isThumbnailTrack = Boolean(track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length > 0)
+            const isTextTrack = track.type === 'text'
+            const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
+            return (
+              <div
+                key={`${track.id}-timeline-row`}
+                onPointerUp={(e: ReactPointerEvent<HTMLDivElement>) => {
+                  if (!isThumbnailTrack) return
+                  if (!onSeek) return
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / Math.max(1, rect.width)))
+                  const seconds = fraction * totalDuration
+                  const clamped = Math.min(totalDuration, Math.max(0, seconds))
+                  onSeek(clamped)
+                  if (onSelect) onSelect(track.id, track.items?.[0]?.id ?? '')
+                }}
+                style={{ position: 'absolute', top, left: 0, right: 0, height: ROW_HEIGHT, borderRadius: 10, background: isThumbnailTrack ? 'rgba(15, 23, 42, 0.35)' : isTextTrack ? 'rgba(99, 102, 241, 0.18)' : 'rgba(30, 41, 59, 0.55)', border: '1px solid rgba(148, 163, 184, 0.18)', overflow: 'hidden' }}>
+                {isThumbnailTrack && (() => {
+                    const entry = thumbnailMap[track.id]
+                    if (!entry || !entry.images || !entry.images.length) return (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(30,41,59,0.6)' }} />
+                    )
 
-            <div style={{ position: 'absolute', top: MARKER_HEIGHT, left: 0, right: 0, height: totalRowsHeight }}>
-              {tracks.map((track, index) => {
-                const top = index * (ROW_HEIGHT + ROW_GAP)
-                const isThumbnailTrack = Boolean(
-                  track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length > 0,
-                )
-                const isTextTrack = track.type === 'text'
-                const totalDuration = durationInSeconds > 0 ? durationInSeconds : 1
-                return (
-                  <div
-                    key={`${track.id}-timeline-row`}
-                    style={{
-                      position: 'absolute',
-                      top,
-                      left: 0,
-                      right: 0,
-                      height: ROW_HEIGHT,
-                      borderRadius: 10,
-                      background: isThumbnailTrack
-                        ? 'rgba(15, 23, 42, 0.35)'
-                        : isTextTrack
-                        ? 'rgba(99, 102, 241, 0.18)'
-                        : 'rgba(30, 41, 59, 0.55)',
-                      border: '1px solid rgba(148, 163, 184, 0.18)',
-                      overflow: 'hidden',
-                    }}
-                  >
-                      {isThumbnailTrack && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            display: 'flex',
-                            gap: 0,
-                            pointerEvents: 'none',
-                          }}
-                        >
-                          {track.thumbnails!.map((thumb, thumbIndex) => {
-                            const segmentDuration = thumb.duration ?? totalDuration / track.thumbnails!.length
-                            const widthPercent = Math.min(1, Math.max(segmentDuration / totalDuration, 0))
-                            const flexAmount = Math.max(widthPercent, 0.0001)
-                            const images = thumbnailMap[track.id] ?? []
-                            const imageSrc = images[thumbIndex] ?? images[images.length - 1]
-                            return (
-                              <div
-                                key={`${track.id}-thumb-${thumbIndex}`}
-                                style={{
-                                  flexBasis: `${flexAmount * 100}%`,
-                                  flexGrow: flexAmount,
-                                  flexShrink: 0,
-                                  height: '100%',
-                                  overflow: 'hidden',
-                                }}
-                              >
-                                {imageSrc ? (
-                                  <img
-                                    src={imageSrc}
-                                    alt="thumbnail"
-                                    style={{ height: '100%', display: 'block' }}
-                                  />
-                                ) : (
-                                  <div style={{ width: '100%', height: '100%', background: 'rgba(30,41,59,0.6)' }} />
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                      {!isThumbnailTrack &&
-                        track.items.map((item) => {
-                          const startPx = interpolate(item.start, [0, durationInSeconds || 1], [0, timelineWidth])
-                          const widthPx = interpolate(
-                            item.end - item.start,
-                            [0, durationInSeconds || 1],
-                            [0, timelineWidth],
-                            { extrapolateRight: 'clamp' },
-                          )
-                          const isCurrentDragging =
-                            Boolean(
-                              draggingItem &&
-                                draggingItem.trackId === track.id &&
-                                draggingItem.itemId === item.id,
-                            )
-
-                          const beginDrag = (mode: DragState['mode']) => (event: ReactPointerEvent) => {
-                            if (!onBeginDrag || track.type !== 'text') return
-                            event.preventDefault()
-                            event.stopPropagation()
-                            onBeginDrag({
-                              trackId: track.id,
-                              itemId: item.id,
-                              mode,
-                              clientX: event.clientX,
-                              start: item.start,
-                              end: item.end,
-                              isTextTrack: true
-                            })
-                          }
-
+                    // Render each thumbnail at its correct time position and width
+                    return (
+                      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                        {entry.images.map((src, i) => {
+                          const spec = entry.specs[i] ?? { time: (i / Math.max(1, entry.images.length)) * totalDuration, duration: totalDuration / Math.max(1, entry.images.length) }
+                          const left = (spec.time / totalDuration) * 100
+                          const widthPercent = ((spec.duration ?? (totalDuration / Math.max(1, entry.images.length))) / totalDuration) * 100
                           return (
-                            <div
-                              key={item.id}
-                              onPointerDown={isTextTrack ? beginDrag('move') : undefined}
-                              data-role={isTextTrack ? 'track-item' : undefined}
-                              style={{
-                                position: 'absolute',
-                                left: startPx,
-                                width: Math.max(4, widthPx),
-                                top: 4,
-                                bottom: 4,
-                                borderRadius: 8,
-                                background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color,
-                                boxShadow: isCurrentDragging
-                                  ? '0 0 0 2px rgba(56, 189, 248, 0.9)'
-                                  : '0 8px 18px rgba(15, 23, 42, 0.45)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: isTextTrack ? 'flex-start' : 'center',
-                                fontSize: isTextTrack ? 12 : 11,
-                                fontWeight: isTextTrack ? 500 : 600,
-                                color: isTextTrack ? '#ede9fe' : '#0f172a',
-                                textTransform: isTextTrack ? 'none' : 'uppercase',
-                                letterSpacing: isTextTrack ? 0 : 0.4,
-                                padding: isTextTrack ? '0 18px' : undefined,
-                                overflow: 'hidden',
-                                whiteSpace: isTextTrack ? 'nowrap' : undefined,
-                                textOverflow: isTextTrack ? 'ellipsis' : undefined,
-                                cursor: onBeginDrag && isTextTrack ? (isCurrentDragging ? 'grabbing' : 'grab') : 'default',
-                                userSelect: 'none',
-                                zIndex: isTextTrack ? 2 : 1,
-                              }}
-                            >
-                              {isTextTrack && onBeginDrag ? (
-                                <>
-                                  <span
-                                    onPointerDown={beginDrag('start')}
-                                    data-role="track-handle"
-                                    style={{
-                                      position: 'absolute',
-                                      left: 0,
-                                      top: 0,
-                                      bottom: 0,
-                                      width: 8,
-                                      cursor: 'ew-resize',
-                                      background: 'rgba(15, 23, 42, 0.3)',
-                                    }}
-                                  />
-                                  <span style={{ flex: 1 }}>{item.label}</span>
-                                  <span
-                                    onPointerDown={beginDrag('end')}
-                                    data-role="track-handle"
-                                    style={{
-                                      position: 'absolute',
-                                      right: 0,
-                                      top: 0,
-                                      bottom: 0,
-                                      width: 8,
-                                      cursor: 'ew-resize',
-                                      background: 'rgba(15, 23, 42, 0.3)',
-                                    }}
-                                  />
-                                </>
-                              ) : (
-                                item.label
-                              )}
+                            <div key={`${track.id}-thumb-${i}`} style={{ position: 'absolute', left: `${left}%`, width: `${widthPercent}%`, top: 0, bottom: 0, overflow: 'hidden' }}>
+                              <img src={src} alt={`thumb-${i}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                             </div>
                           )
                         })}
-                  </div>
-                )
-              })}
-            </div>
+                      </div>
+                    )
+                })()}
+                {!isThumbnailTrack && track.items.map((item) => {
+                  const startPx = Math.max(0, item.start * pxPerSecond)
+                  const widthPx = Math.max(4, Math.max(0, (item.end - item.start)) * pxPerSecond)
+                  const isCurrentDragging = Boolean(draggingItem && draggingItem.trackId === track.id && draggingItem.itemId === item.id)
+                  const isSelected = Boolean(selected && selected.trackId === track.id && selected.itemId === item.id)
+                  const isAudioTrack = track.type === 'audio'
+                  const draggable = !isAudioTrack && !isThumbnailTrack
+                  const beginDrag = (mode: 'move' | 'start' | 'end') => (event: ReactPointerEvent) => {
+                    if (!onBeginDrag || !draggable) return
+                    event.preventDefault(); event.stopPropagation()
+                    onBeginDrag({ trackId: track.id, itemId: item.id, mode, clientX: event.clientX, start: item.start, end: item.end, isTextTrack: track.type === 'text' })
+                  }
+                  const cursor = draggable ? (isCurrentDragging ? 'grabbing' : 'grab') : (isAudioTrack ? 'not-allowed' : 'default')
+                  return (
+                    <div
+                      key={item.id}
+                      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+                        // Begin move-drag after small movement threshold; allow click selection
+                        if (!onBeginDrag || !draggable) return
+                        const target = e.target as HTMLElement
+                        if (target && target.dataset.role === 'track-handle') return
 
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                bottom: 0,
-                left: playheadLeft,
-                width: 2,
-                background: 'rgba(56, 189, 248, 0.95)',
-                boxShadow: '0 0 12px rgba(56, 189, 248, 0.6)',
-              }}
-            />
-          </div>
+                        const startX = e.clientX
+                        let moved = false
+
+                        const moveHandler = (ev: PointerEvent) => {
+                          const delta = Math.abs(ev.clientX - startX)
+                          if (delta > 4) {
+                            moved = true
+                            window.removeEventListener('pointermove', moveHandler)
+                            window.removeEventListener('pointerup', upHandler)
+                            onBeginDrag({ trackId: track.id, itemId: item.id, mode: 'move', clientX: ev.clientX, start: item.start, end: item.end })
+                          }
+                        }
+
+                        const upHandler = (ev: PointerEvent) => {
+                          window.removeEventListener('pointermove', moveHandler)
+                          window.removeEventListener('pointerup', upHandler)
+                          if (!moved) {
+                            // treat as click/select
+                            if (onSelect) onSelect(track.id, item.id)
+                            if (onSeek) onSeek(item.start)
+                          }
+                        }
+
+                        window.addEventListener('pointermove', moveHandler)
+                        window.addEventListener('pointerup', upHandler)
+                      }}
+                      onPointerUp={() => {
+                        // noop - handled by upHandler
+                      }}
+                      data-role={'track-item'}
+                      style={{ position: 'absolute', left: startPx, width: widthPx, top: 4, bottom: 4, borderRadius: 8, background: isTextTrack ? 'rgba(99, 102, 241, 0.8)' : item.color, boxShadow: isCurrentDragging ? '0 0 0 2px rgba(56, 189, 248, 0.9)' : '0 8px 18px rgba(15, 23, 42, 0.45)', outline: isSelected ? '2px solid rgba(99, 102, 241, 0.95)' : undefined, transform: isSelected ? 'translateY(-1px)' : undefined, display: 'flex', alignItems: 'center', justifyContent: isTextTrack ? 'flex-start' : 'center', fontSize: isTextTrack ? 12 : 11, fontWeight: isTextTrack ? 500 : 600, color: isTextTrack ? '#ede9fe' : '#0f172a', textTransform: isTextTrack ? 'none' : 'uppercase', letterSpacing: isTextTrack ? 0 : 0.4, padding: isTextTrack ? '0 18px' : undefined, overflow: 'hidden', whiteSpace: isTextTrack ? 'nowrap' : undefined, textOverflow: isTextTrack ? 'ellipsis' : undefined, cursor, userSelect: 'none', zIndex: isTextTrack ? 2 : 1 }}
+                    >
+                      {draggable ? (
+                        <>
+                          <span onPointerDown={beginDrag('start')} data-role="track-handle" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', background: 'rgba(15, 23, 42, 0.3)' }} />
+                          <span style={{ flex: 1 }}>{item.label}</span>
+                          <span onPointerDown={beginDrag('end')} data-role="track-handle" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', background: 'rgba(15, 23, 42, 0.3)' }} />
+                        </>
+                      ) : (
+                        <span style={{ flex: 1 }}>{item.label}</span>
+                      )}
+                    </div>
+                  ) 
+                })}
+              </div>
+            )
+          })}
         </div>
+
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: playheadLeft, width: 2, background: '#ffffff', boxShadow: '0 0 12px rgba(255, 255, 255, 0.7)' }} />
       </div>
-    </AbsoluteFill>
   )
 }
 
-type RemotionTimelineProps = {
+export type RemotionTimelineProps = {
   tracks: TimelineTrack[]
   duration: number
   currentTime: number
   fps?: number
   zoom: number
   onSeek: (seconds: number) => void
-  onUpdateTrackItem?: (params: {
+  onZoomChange?: (value: number) => void
+  onUpdateTrackItem?: (params: { trackId: string; itemId: string; start?: number; end?: number }) => void
+  onDeleteTrackItem?: (params: { trackId: string; itemId: string }) => void
+  onUpdateTrackItemMeta?: (params: { trackId: string; itemId: string; meta: Record<string, any> }) => void
+  onSelect?: (selection: { trackId: string; itemId: string } | null) => void
+}
+
+type DragState = { trackId: string; itemId: string; mode: 'move' | 'start' | 'end'; startClientX: number; initialStart: number; initialEnd: number }
+
+export function RemotionTimeline({
+  tracks,
+  duration,
+  currentTime,
+  fps = 30,
+  zoom,
+  onSeek,
+  onZoomChange,
+  onUpdateTrackItem,
+  onDeleteTrackItem,
+  onUpdateTrackItemMeta: onUpdateTrackItemMetaProp,
+  onSelect: onSelectProp,
+}: RemotionTimelineProps) {
+  const [selected, setSelected] = useState<{ trackId: string; itemId: string } | null>(null)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && onDeleteTrackItem) {
+        onDeleteTrackItem(selected)
+        setSelected(null)
+        onSelectProp?.(null)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selected, onDeleteTrackItem, onSelectProp])
+
+  // Remove playerRef - not using Remotion Player anymore
+  const rootRef = useRef<HTMLDivElement>(null)
+  const tracksViewportRef = useRef<HTMLDivElement>(null)
+  const thumbnailCacheRef = useRef(new Map<string, { specs: ThumbnailSpec[]; images: string[] }>())
+  const [thumbnailMap, setThumbnailMap] = useState<Record<string, { specs: ThumbnailSpec[]; images: string[] }>>({})
+  const pendingDragRef = useRef<{
     trackId: string
     itemId: string
-    start?: number
-    end?: number
-  }) => void
-}
-
-type DragState = {
-  trackId: string
-  itemId: string
-  mode: 'move' | 'start' | 'end'
-  startClientX: number
-  initialStart: number
-  initialEnd: number
-}
-
-export function RemotionTimeline({ tracks, duration, currentTime, fps = 30, zoom, onSeek, onUpdateTrackItem }: RemotionTimelineProps) {
-  const playerRef = useRef<PlayerRef>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const thumbnailCacheRef = useRef(new Map<string, string[]>())
-  const [thumbnailMap, setThumbnailMap] = useState<Record<string, string[]>>({})
+    clientX: number
+    start: number
+    end: number
+    isTextTrack: boolean
+    cleanup?: () => void
+  } | null>(null)
   const [containerWidth, setContainerWidth] = useState(1024)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [draggingItem, setDraggingItem] = useState<{ trackId: string; itemId: string } | null>(null)
   const isScrubbingRef = useRef(false)
+  const lastPointerXRef = useRef<number | null>(null)
+  const scrollRAFRef = useRef<number | null>(null)
+  // Skip recenter on zoom effect when we already handled it in wheel handler
+  const skipNextZoomRecenterRef = useRef(false)
+  const prevZoomRef = useRef(zoom)
 
   const safeFps = Math.max(1, Math.round(fps))
-  const paddingWidth = LABEL_WIDTH + PADDING_X * 2
+  const paddingWidth = PADDING_X * 2
 
   useEffect(() => {
     const update = () => {
-      if (!containerRef.current) return
-      const width = containerRef.current.clientWidth
-      if (width > 0) {
-        setContainerWidth(width)
-      }
+      const n = tracksViewportRef.current
+      if (!n) return
+      const width = n.clientWidth
+      if (width > 0) setContainerWidth(width)
     }
-
     update()
-
-    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
-      const observer = new ResizeObserver(() => update())
-      observer.observe(containerRef.current)
-      return () => observer.disconnect()
+    if (typeof ResizeObserver !== 'undefined' && tracksViewportRef.current) {
+      const ro = new ResizeObserver(() => update())
+      ro.observe(tracksViewportRef.current)
+      return () => ro.disconnect()
     }
-
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', update)
       return () => window.removeEventListener('resize', update)
     }
-
     return undefined
   }, [])
 
   const availableTimelineWidthRaw = Math.max(containerWidth - paddingWidth, 0)
   const basePxPerSecondRaw = duration > 0 ? availableTimelineWidthRaw / duration : availableTimelineWidthRaw
   const pxPerSecond = useMemo(() => {
-    const zoomFactor = Math.max(0.4, Math.min(zoom / 40, 1))
+    // Map slider zoom -> zoomFactor. divisor 40 keeps behavior similar to before.
+    // Increase cap to 20x and allow very small minima so the timeline can zoom very large.
+    const zoomFactor = Math.max(0.01, Math.min(zoom / 40, 20))
     const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
-    return Math.max(base * zoomFactor, 0.5)
+    return Math.max(base * zoomFactor, 0.01)
   }, [basePxPerSecondRaw, zoom])
 
+  // Timeline width grows with zoom - this is the scrollable content width
   const timelineWidth = duration > 0 ? pxPerSecond * duration : availableTimelineWidthRaw
   const totalRowsHeight = tracks.length > 0 ? tracks.length * ROW_HEIGHT + Math.max(0, tracks.length - 1) * ROW_GAP : ROW_HEIGHT
   const totalHeight = MARKER_HEIGHT + totalRowsHeight + PADDING_Y * 2
-  const totalWidth = LABEL_WIDTH + timelineWidth + PADDING_X * 2
-  const renderedWidth = Math.min(totalWidth, containerWidth)
-  const scaleRatio = totalWidth > 0 ? renderedWidth / totalWidth : 1
-  const durationInFrames = Math.max(1, Math.round(Math.max(0, duration) * safeFps))
 
-  const handleBeginDrag = useCallback(
-    ({ trackId, itemId, mode, clientX, start, end }: {
-      trackId: string
-      itemId: string
-      mode: DragState['mode']
-      clientX: number
-      start: number
-      end: number
-    }) => {
-      if (!onUpdateTrackItem) return
-      setDragState({
-        trackId,
-        itemId,
-        mode,
-        startClientX: clientX,
-        initialStart: start,
-        initialEnd: end,
-      })
-      setDraggingItem({ trackId, itemId })
-    },
-    [onUpdateTrackItem],
-  )
+  const handleBeginDrag = useCallback(({ trackId, itemId, mode, clientX, start, end }: { trackId: string; itemId: string; mode: DragState['mode']; clientX: number; start: number; end: number }) => {
+    if (!onUpdateTrackItem) return
+    setDragState({ trackId, itemId, mode, startClientX: clientX, initialStart: start, initialEnd: end })
+    setDraggingItem({ trackId, itemId })
+  }, [onUpdateTrackItem])
 
   useEffect(() => {
+    // Generate one thumbnail per visible segment based on current pxPerSecond.
+    // Debounce generation to avoid thrashing while scrubbing/zooming.
     let cancelled = false
+    const timer = setTimeout(() => {
+      const loadThumbnails = async () => {
+        const entries = await Promise.all(tracks.map(async (track) => {
+          if (!(track.type === 'image' && track.assetSrc)) return [track.id, undefined] as const
 
-    const loadThumbnails = async () => {
-      const trackPromises = tracks.map(async (track) => {
-        if (!(track.type === 'image' && track.assetSrc && track.thumbnails && track.thumbnails.length)) {
-          return [track.id, undefined] as const
-        }
+          // Determine how many thumbnails to generate for this track based on timeline width
+          const timelineWidth = Math.max(1, duration) * pxPerSecond
+          const targetThumbPx = 160
+          const maxThumbs = 1000
+          const count = Math.max(1, Math.min(maxThumbs, Math.ceil(timelineWidth / targetThumbPx)))
 
-        const cacheKey = `${track.assetSrc}|${track.thumbnails
-          .map((thumb) => `${thumb.time}-${thumb.duration ?? ''}`)
-          .join(',')}`
-        const cached = thumbnailCacheRef.current.get(cacheKey)
-        if (cached) {
-          return [track.id, cached] as const
-        }
+          const cacheKey = `${track.assetSrc}|pps:${Math.round(pxPerSecond)}|count:${count}`
+          const cached = thumbnailCacheRef.current.get(cacheKey)
+          if (cached) return [track.id, cached] as const
 
-        try {
-          const images = await generateVideoThumbnails(track.assetSrc, track.thumbnails)
-          if (!cancelled && images.length) {
-            thumbnailCacheRef.current.set(cacheKey, images)
+          try {
+            const specs: ThumbnailSpec[] = Array.from({ length: count }, (_, i) => {
+              const t = Math.min(duration, (i / Math.max(1, count)) * duration)
+              return { time: t }
+            })
+            const images = await generateVideoThumbnails(track.assetSrc, specs)
+            if (!cancelled && images.length) thumbnailCacheRef.current.set(cacheKey, { specs, images })
+            return [track.id, { specs, images }] as const
+          } catch {
+            // Don't clear existing thumbnails on error; keep previous
+            return [track.id, undefined] as const
           }
-          return [track.id, images] as const
-        } catch (error) {
-          return [track.id, []] as const
-        }
-      })
+        }))
 
-      const entries = await Promise.all(trackPromises)
-      if (cancelled) return
-
-      setThumbnailMap((prev) => {
-        const next: Record<string, string[]> = {}
-        for (const [trackId, images] of entries) {
-          if (images && images.length) {
-            next[trackId] = images as string[]
+        if (cancelled) return
+        setThumbnailMap((prev) => {
+          // Merge with previous to avoid flicker while new thumbs are generating
+          const next: Record<string, { specs: ThumbnailSpec[]; images: string[] }> = { ...prev }
+          for (const [trackId, entry] of entries) {
+            if (entry && (entry as any).images && (entry as any).images.length) {
+              next[trackId] = entry as { specs: ThumbnailSpec[]; images: string[] }
+            }
+            // If entry is undefined or empty, keep existing prev[trackId]
           }
-        }
-        return next
-      })
-    }
+          return next
+        })
+      }
+      loadThumbnails()
+    }, 180)
 
-    loadThumbnails()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [tracks, duration, pxPerSecond])
 
-    return () => {
-      cancelled = true
-    }
-  }, [tracks])
+  // Remove Player sync - using direct currentTime now
 
-  useEffect(() => {
-    if (!playerRef.current) return
-    const frame = Math.min(durationInFrames - 1, Math.max(0, Math.round(currentTime * safeFps)))
-    playerRef.current.seekTo(frame)
-  }, [currentTime, durationInFrames, safeFps])
-
-  const handleSeek = useCallback(
-    (clientX: number) => {
-      if (!containerRef.current || duration <= 0) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const offsetX = clientX - rect.left
-      const scaledOffset = scaleRatio > 0 ? offsetX / scaleRatio : offsetX
-      const timelineX = scaledOffset - (LABEL_WIDTH + PADDING_X)
-      const seconds = timelineX / pxPerSecond
-      const clamped = Math.min(duration, Math.max(0, seconds))
-      onSeek(clamped)
-    },
-    [duration, onSeek, pxPerSecond, scaleRatio],
-  )
+  const handleSeek = useCallback((clientX: number) => {
+    const cont = tracksViewportRef.current
+    if (!cont || duration <= 0) return
+    const rect = cont.getBoundingClientRect()
+    const scrollLeft = cont.scrollLeft || 0
+    const offsetX = clientX - rect.left + scrollLeft
+    const timelineX = offsetX - PADDING_X
+    const seconds = timelineX / pxPerSecond
+    const clamped = Math.min(duration, Math.max(0, seconds))
+    onSeek(clamped)
+  }, [duration, onSeek, pxPerSecond])
 
   useEffect(() => {
     if (!dragState || !onUpdateTrackItem) return
-
     const handlePointerMove = (event: PointerEvent) => {
-      const deltaPx = (event.clientX - dragState.startClientX) / (scaleRatio || 1)
+      lastPointerXRef.current = event.clientX
+      const deltaPx = event.clientX - dragState.startClientX
       const deltaSeconds = deltaPx / pxPerSecond
       const segmentLength = dragState.initialEnd - dragState.initialStart
       const minSegment = 0.1
       const totalDuration = duration > 0 ? duration : dragState.initialEnd
-
       let nextStart = dragState.initialStart
       let nextEnd = dragState.initialEnd
-
-      if (dragState.mode === 'move') {
-        nextStart = Math.max(0, Math.min(dragState.initialStart + deltaSeconds, totalDuration - segmentLength))
-        nextEnd = Math.min(totalDuration, nextStart + segmentLength)
-      } else if (dragState.mode === 'start') {
-        nextStart = Math.max(0, Math.min(dragState.initialStart + deltaSeconds, dragState.initialEnd - minSegment))
-        nextEnd = dragState.initialEnd
-      } else if (dragState.mode === 'end') {
-        nextEnd = Math.min(totalDuration, Math.max(dragState.initialEnd + deltaSeconds, dragState.initialStart + minSegment))
-        nextStart = dragState.initialStart
-      }
-
+      if (dragState.mode === 'move') { nextStart = Math.max(0, Math.min(dragState.initialStart + deltaSeconds, totalDuration - segmentLength)); nextEnd = Math.min(totalDuration, nextStart + segmentLength) }
+      else if (dragState.mode === 'start') { nextStart = Math.max(0, Math.min(dragState.initialStart + deltaSeconds, dragState.initialEnd - minSegment)); nextEnd = dragState.initialEnd }
+      else if (dragState.mode === 'end') { nextEnd = Math.min(totalDuration, Math.max(dragState.initialEnd + deltaSeconds, dragState.initialStart + minSegment)); nextStart = dragState.initialStart }
       onUpdateTrackItem({ trackId: dragState.trackId, itemId: dragState.itemId, start: nextStart, end: nextEnd })
     }
-
-    const handlePointerUp = () => {
-      setDragState(null)
-      setDraggingItem(null)
-    }
-
+    const handlePointerUp = () => { setDragState(null); setDraggingItem(null); lastPointerXRef.current = null; if (scrollRAFRef.current) { cancelAnimationFrame(scrollRAFRef.current); scrollRAFRef.current = null } }
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp, { once: true })
+    return () => { window.removeEventListener('pointermove', handlePointerMove); window.removeEventListener('pointerup', handlePointerUp) }
+  }, [dragState, onUpdateTrackItem, pxPerSecond, duration])
 
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
+  // Auto-scroll near edges while dragging
+  useEffect(() => {
+    if (!dragState) return
+    const tick = () => {
+      if (!dragState) { scrollRAFRef.current = null; return }
+      const cont = tracksViewportRef.current
+      const pointerX = lastPointerXRef.current
+      if (cont && typeof pointerX === 'number') {
+        const rect = cont.getBoundingClientRect()
+        const edge = 48
+        let dx = 0
+        if (pointerX < rect.left + edge) dx = -Math.min(30, (rect.left + edge - pointerX) * 0.4)
+        else if (pointerX > rect.right - edge) dx = Math.min(30, (pointerX - (rect.right - edge)) * 0.4)
+        if (dx !== 0) cont.scrollLeft = Math.max(0, Math.min(cont.scrollLeft + dx, cont.scrollWidth))
+      }
+      scrollRAFRef.current = requestAnimationFrame(tick)
     }
-  }, [dragState, onUpdateTrackItem, pxPerSecond, scaleRatio, duration])
+    scrollRAFRef.current = requestAnimationFrame(tick)
+    return () => { if (scrollRAFRef.current) cancelAnimationFrame(scrollRAFRef.current); scrollRAFRef.current = null }
+  }, [dragState])
 
   useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!isScrubbingRef.current) return
-      handleSeek(event.clientX)
-    }
-
-    const handlePointerUp = () => {
-      isScrubbingRef.current = false
-    }
-
+    const handlePointerMove = (event: PointerEvent) => { if (!isScrubbingRef.current) return; handleSeek(event.clientX) }
+    const handlePointerUp = () => { isScrubbingRef.current = false }
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-    }
+    return () => { window.removeEventListener('pointermove', handlePointerMove); window.removeEventListener('pointerup', handlePointerUp) }
   }, [handleSeek])
 
-  const handlePointerDownCapture = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return
-      const target = event.target as HTMLElement
-      const role = target.dataset.role
-      if (role === 'track-item' || role === 'track-handle') {
-        return
-      }
-      isScrubbingRef.current = true
-      handleSeek(event.clientX)
-    },
-    [handleSeek],
-  )
+  // Recenter timeline on playhead when zoom changes externally
+  useEffect(() => {
+    // Ignore initial mount
+    const prevZoom = prevZoomRef.current
+    prevZoomRef.current = zoom
+    if (prevZoom === zoom) return
+
+    // Skip if the wheel handler already adjusted scroll
+    if (skipNextZoomRecenterRef.current) {
+      skipNextZoomRecenterRef.current = false
+      return
+    }
+
+    const cont = tracksViewportRef.current
+    if (!cont) return
+
+    // Compute current and next pixels-per-second using same formula
+    const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
+    const zoomFactor = Math.max(0.01, Math.min(zoom / 40, 20))
+    const nextPps = Math.max(base * zoomFactor, 0.01)
+
+    const nextPlayheadXContent = PADDING_X + currentTime * nextPps
+    const newScrollLeft = Math.max(0, nextPlayheadXContent - cont.clientWidth / 2)
+    const nextTimelineWidth = (duration > 0 ? nextPps * duration : Math.max(containerWidth - PADDING_X * 2, 0))
+    const nextInnerWidth = nextTimelineWidth + PADDING_X * 2
+    const maxScrollLeft = Math.max(0, nextInnerWidth - cont.clientWidth)
+    cont.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft))
+  }, [zoom, currentTime, duration, containerWidth, basePxPerSecondRaw])
+
+  const handlePointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    const role = target.dataset.role
+    if (role === 'track-item' || role === 'track-handle') return
+    const cont = tracksViewportRef.current
+    if (!cont) return
+    const rect = cont.getBoundingClientRect()
+    const offsetY = event.clientY - rect.top
+    const withinRuler = offsetY <= PADDING_Y + MARKER_HEIGHT
+    if (!withinRuler) return
+    isScrubbingRef.current = true
+    handleSeek(event.clientX)
+  }, [handleSeek])
 
   return (
-    <div ref={containerRef} className="relative rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/60 w-full">
-      <div
-        className="relative mx-auto"
-        style={{ width: renderedWidth }}
-        onPointerDownCapture={handlePointerDownCapture}
-      >
-        <Player
-          ref={playerRef}
-          component={TimelineComposition}
-          inputProps={{ tracks, durationInSeconds: duration, pxPerSecond, thumbnailMap, draggingItem, onBeginDrag: onUpdateTrackItem ? handleBeginDrag : undefined }}
-          durationInFrames={durationInFrames}
-          compositionWidth={Math.ceil(totalWidth)}
-          compositionHeight={totalHeight}
-          fps={safeFps}
-          controls={false}
-          loop={false}
-          autoPlay={false}
-          showVolumeControls={false}
-          clickToPlay={false}
-          allowFullscreen={false}
-          doubleClickToFullscreen={false}
-          style={{ width: renderedWidth, height: totalHeight }}
-          className="select-none"
-        />
+    <div
+      className="relative rounded-2xl border border-slate-800 bg-slate-900/60 w-full overflow-hidden select-none"
+      style={{ 
+        contain: 'layout paint', 
+        touchAction: 'pan-x',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        msUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+        WebkitTapHighlightColor: 'transparent'
+      }}
+      data-timeline-container
+      tabIndex={0}
+      ref={rootRef}
+    >
+      <div className="flex w-full">
+        <div className="shrink-0" style={{ padding: `${PADDING_Y}px ${PADDING_X}px`, width: LABEL_WIDTH + PADDING_X, height: totalHeight }}>
+          <div style={{ height: MARKER_HEIGHT }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: ROW_GAP }}>
+            {tracks.map((track) => (
+              <div key={`label-${track.id}`} style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', padding: '0 12px', borderRadius: 8, background: 'rgba(71,85,105,0.25)', border: '1px solid rgba(71,85,105,0.3)', color: '#f8fafc', fontSize: 13, fontWeight: 600 }}>
+                <span>{track.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div ref={tracksViewportRef} className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden" style={{ 
+          overscrollBehaviorX: 'contain',
+          touchAction: 'pan-x'
+        }}>
+          {/* Scrollable timeline content - width grows with zoom */}
+          <div
+            style={{ 
+              width: timelineWidth + PADDING_X * 2,
+              minWidth: '100%',
+              touchAction: 'pan-x',
+              userSelect: 'none',
+              WebkitUserSelect: 'none'
+            }}
+            onPointerDownCapture={handlePointerDownCapture}
+            onWheelCapture={(e) => {
+              // Handle Cmd/Ctrl+wheel for timeline zoom only
+              if (e.ctrlKey || e.metaKey) {
+                e.preventDefault()
+                e.stopPropagation()
+
+                if (!onZoomChange) return
+
+                const delta = e.deltaY
+                const currentZoom = zoom
+                const step = Math.max(1, Math.round(Math.abs(delta) > 50 ? 6 : 3))
+                const nextZoom = Math.max(1, Math.min(400, currentZoom + (delta > 0 ? -step : step)))
+                const cont = tracksViewportRef.current
+                if (!cont) { onZoomChange(nextZoom); return }
+
+                // Compute next pixels-per-second using same base calculation
+                // Match pxPerSecond calculation: allow larger zoomFactor cap
+                const zoomFactor = Math.max(0.05, Math.min(nextZoom / 40, 20))
+                const base = basePxPerSecondRaw > 0 ? basePxPerSecondRaw : BASE_PIXEL_PER_SECOND * 0.5
+                const nextPps = Math.max(base * zoomFactor, 0.05)
+
+                // Determine anchor: default to playhead; hold Alt to anchor to cursor
+                let newScrollLeft: number
+                const rect = cont.getBoundingClientRect()
+                if (e.altKey) {
+                  // Cursor-anchored zoom
+                  const mouseX = e.clientX - rect.left + cont.scrollLeft
+                  const anchorXContent = mouseX - PADDING_X
+                  const anchorTime = anchorXContent / pxPerSecond
+                  const nextAnchorXContent = anchorTime * nextPps
+                  newScrollLeft = nextAnchorXContent + PADDING_X - (e.clientX - rect.left)
+                } else {
+                  // Playhead-anchored zoom
+                  const currentPlayheadXContent = PADDING_X + currentTime * pxPerSecond
+                  const currentAnchorScreenX = currentPlayheadXContent - cont.scrollLeft
+                  const nextPlayheadXContent = PADDING_X + currentTime * nextPps
+                  newScrollLeft = nextPlayheadXContent - currentAnchorScreenX
+                }
+
+                // Clamp to next content width
+                const nextTimelineWidth = (duration > 0 ? nextPps * duration : Math.max(containerWidth - PADDING_X * 2, 0))
+                const nextInnerWidth = nextTimelineWidth + PADDING_X * 2
+                const maxScrollLeft = Math.max(0, nextInnerWidth - cont.clientWidth)
+                newScrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft))
+
+                // Mark to skip recentering in zoom effect, since we're handling it here
+                skipNextZoomRecenterRef.current = true
+                onZoomChange(nextZoom)
+                requestAnimationFrame(() => { cont.scrollLeft = newScrollLeft })
+              }
+            }}
+
+          >
+            {/* Timeline content using CSS layout, not Remotion Player */}
+            <div style={{ 
+              width: '100%', 
+              height: totalHeight,
+              position: 'relative',
+              backgroundColor: '#0f172a',
+              color: '#e2e8f0',
+              fontFamily: 'Inter, ui-sans-serif, system-ui',
+              padding: `${PADDING_Y}px ${PADDING_X}px`
+            }}>
+              <TimelineComposition
+                tracks={tracks}
+                durationInSeconds={duration}
+                pxPerSecond={pxPerSecond}
+                thumbnailMap={thumbnailMap}
+                draggingItem={draggingItem}
+                onBeginDrag={onUpdateTrackItem ? handleBeginDrag : undefined}
+                onSeek={onSeek}
+                onSelect={(trackId: string, itemId: string) => {
+                  const sel = { trackId, itemId }
+                  setSelected(sel)
+                  onSelectProp?.(sel)
+                }}
+                selected={selected}
+                onUpdateTrackItemMeta={(trackId: string, itemId: string, meta: Record<string, any>) => {
+                  onUpdateTrackItemMetaProp?.({ trackId, itemId, meta })
+                }}
+                currentTime={currentTime}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
+

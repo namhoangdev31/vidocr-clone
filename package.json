@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "PORT=3030 next dev",
+      "fetch-ffmpeg": "bash scripts/fetch-ffmpeg.sh",
+      "postinstall-copy-core-mt": "node scripts/postinstall-copy-core-mt.js",
+      "postinstall": "npm run postinstall-copy-core-mt || true",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

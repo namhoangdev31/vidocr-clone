@@ -1,11 +1,17 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { TranscriptEntry } from './types'
 
 type TranscriptPanelProps = {
   entries: TranscriptEntry[]
   currentTime: number
   onSeek: (seconds: number) => void
+  height?: number | null
+  onApplyTranscripts?: (entries: TranscriptEntry[]) => void
+  onUpdateEntry?: (entryId: string, changes: { primaryText?: string }) => void
+  // When a text track item is selected elsewhere (e.g., timeline), scroll to it
+  selectedEntryId?: string
 }
 
 const formatRange = (start: number, end: number) => {
@@ -18,35 +24,122 @@ const formatRange = (start: number, end: number) => {
   return `${toLabel(start)} - ${toLabel(end)}`
 }
 
-export function TranscriptPanel({ entries, currentTime, onSeek }: TranscriptPanelProps) {
+export function TranscriptPanel({ entries, currentTime, onSeek, height, onApplyTranscripts, onUpdateEntry, selectedEntryId }: TranscriptPanelProps) {
+  const style: React.CSSProperties | undefined = height ? { height: `${height}px` } : undefined
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftPrimary, setDraftPrimary] = useState<string>('')
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  
+
+  const beginEdit = (entry: TranscriptEntry) => {
+    setEditingId(entry.id)
+  setDraftPrimary(entry.primaryText)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+  setDraftPrimary('')
+  }
+
+  const saveEdit = (entryId: string) => {
+    if (typeof onUpdateEntry === 'function') {
+      onUpdateEntry(entryId, { primaryText: draftPrimary })
+    }
+    cancelEdit()
+  }
+
+  // Auto-scroll to the externally selected entry (if provided)
+  useEffect(() => {
+    if (!selectedEntryId) return
+    const container = scrollContainerRef.current
+    const el = itemRefs.current[selectedEntryId]
+    if (!container || !el) return
+
+    // Compute centered scroll position within the container
+    const offsetTop = el.offsetTop
+    const elCenter = offsetTop + el.clientHeight / 2
+    const targetScrollTop = Math.max(0, elCenter - container.clientHeight / 2)
+    container.scrollTo({ top: targetScrollTop, behavior: 'smooth' })
+  }, [selectedEntryId])
+
   return (
-    <aside className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col h-full">
+    // Stretch to parent's height so it matches center column; inner list scrolls when content overflows
+    <aside style={style} className="w-80 border-l border-slate-800 bg-slate-950/80 flex flex-col">
       <div className="px-5 py-4 border-b border-slate-800 flex-shrink-0">
         <h3 className="text-sm font-semibold text-white">Transcript ({entries.length})</h3>
         <p className="text-xs text-slate-400 mt-1">Click a caption to seek the timeline.</p>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-3 px-4 py-4 min-h-0">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-3 px-4 py-4 min-h-0">
         {entries.map((entry) => {
           const isActive = currentTime >= entry.start && currentTime <= entry.end
+          const isSelected = selectedEntryId === entry.id
           return (
-            <button
+            <div
               key={entry.id}
-              type="button"
-              onClick={() => onSeek(entry.start)}
-              className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                isActive
+              ref={(node) => {
+                itemRefs.current[entry.id] = node
+              }}
+              className={`w-full px-4 py-3 rounded-lg border transition-colors ${
+                isSelected
+                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-100'
+                  : isActive
                   ? 'border-sky-500 bg-sky-500/10 text-sky-100'
-                  : 'border-slate-800 bg-slate-900/60 text-slate-200 hover:border-slate-700'
+                  : 'border-slate-800 bg-slate-900/60 text-slate-200'
               }`}
             >
-              <span className="text-xs uppercase tracking-wide text-slate-400">
-                {formatRange(entry.start, entry.end)}
-              </span>
-              <p className="mt-2 text-sm font-medium leading-relaxed">{entry.primaryText}</p>
-              {entry.secondaryText && (
-                <p className="mt-1 text-xs text-slate-400 leading-relaxed">{entry.secondaryText}</p>
-              )}
-            </button>
+              <div className="flex items-start justify-between gap-3">
+                <button type="button" onClick={() => onSeek(entry.start)} className="text-left flex-1">
+                  <span className="text-xs uppercase tracking-wide text-slate-400">
+                    {formatRange(entry.start, entry.end)}
+                  </span>
+                  {editingId === entry.id ? (
+                    <div className="mt-2 space-y-2">
+                      <textarea
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-md p-2 text-sm text-slate-100 resize-none"
+                        rows={2}
+                        value={draftPrimary}
+                        onChange={(e) => setDraftPrimary(e.target.value)}
+                        placeholder="Primary text"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="mt-2 text-sm font-medium leading-relaxed">{entry.primaryText}</p>
+                    </>
+                  )}
+                </button>
+
+                {editingId === entry.id ? (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => saveEdit(entry.id)}
+                      className="px-3 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs"
+                    >
+                      Lưu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-white/90 text-xs"
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => beginEdit(entry)}
+                      className="px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-white/90 text-xs"
+                    >
+                      Sửa
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           )
         })}
       </div>
