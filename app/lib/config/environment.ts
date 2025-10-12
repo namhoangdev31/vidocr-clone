@@ -1,6 +1,6 @@
 // Environment configuration
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://103.82.36.67:3000/v1'
-
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/v1'
+// 103.82.36.67
 // Export config object for backward compatibility
 export const config = {
   API_BASE_URL,

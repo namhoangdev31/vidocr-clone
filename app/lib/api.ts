@@ -150,30 +150,10 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config
-
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true
-
-      const refreshToken = tokenManager.getRefreshToken()
-      if (refreshToken) {
-        try {
-          const response = await authAPI.refreshToken(refreshToken)
-          tokenManager.setTokens(response.data.access_token, response.data.refresh_token)
-
-          // Retry original request với token mới
-          originalRequest.headers.Authorization = `Bearer ${response.data.access_token}`
-          return apiClient(originalRequest)
-        } catch (refreshError) {
-          // Refresh token cũng hết hạn, redirect về login
-          tokenManager.clearTokens()
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login'
-          }
-        }
-      }
+    if (error.response?.status === 401) {
+      tokenManager.clearTokens()
+      window.location.href = '/login'
     }
-
     return Promise.reject(error)
   }
 )
