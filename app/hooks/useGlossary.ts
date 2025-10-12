@@ -42,7 +42,7 @@ export function useGlossary(): UseGlossaryReturn {
     try {
       setIsCreating(true)
       setError(null)
-      const response = await videoTranslationService.createGlossary(request)
+      const response = await videoTranslationService.createGlossary()
       setGlossaries(prev => [...prev, response])
       return response
     } catch (err) {
@@ -57,7 +57,7 @@ export function useGlossary(): UseGlossaryReturn {
     try {
       setIsSearching(true)
       setError(null)
-      const response = await videoTranslationService.searchGlossary(request)
+      const response = await videoTranslationService.searchGlossary()
       return response
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to search glossary')

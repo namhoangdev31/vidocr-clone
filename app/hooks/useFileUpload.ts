@@ -52,10 +52,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}): UseFileUpload
     setError(null)
 
     try {
-      const fileKey = await videoTranslationService.uploadFile(file, (progress) => {
-        setUploadProgress(progress)
-        onProgress?.(progress)
-      })
+      const fileKey = await videoTranslationService.uploadFile()
 
       onSuccess?.(fileKey)
       return fileKey

@@ -23,7 +23,7 @@ export function useLanguageDetection(): UseLanguageDetectionReturn {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await videoTranslationService.detectLanguage(request)
+      const response = await videoTranslationService.detectLanguage()
       return response
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to detect language')

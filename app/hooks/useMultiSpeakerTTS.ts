@@ -37,7 +37,7 @@ export function useMultiSpeakerTTS(): UseMultiSpeakerTTSReturn {
     try {
       setIsGenerating(true)
       setError(null)
-      const response = await videoTranslationService.generateMultiSpeakerTTS(request)
+      const response = await videoTranslationService.generateMultiSpeakerTTS()
       return response
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate TTS')

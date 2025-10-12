@@ -146,7 +146,7 @@ export function useJobManagement(options: UseJobManagementOptions = {}): UseJobM
     setError(null)
 
     try {
-      const job = await videoTranslationService.createJob(jobData)
+      const job = await videoTranslationService.createJob()
       
       // Add new job to the list
       setJobs(prev => [job, ...prev])
@@ -164,7 +164,7 @@ export function useJobManagement(options: UseJobManagementOptions = {}): UseJobM
 
   const getJobStatus = useCallback(async (jobId: string): Promise<JobResponse> => {
     try {
-      const job = await videoTranslationService.getJobStatus(jobId)
+      const job = await videoTranslationService.getJobStatus()
       
       // Update job in the list
       setJobs(prev => prev.map(j => j.id === jobId ? job : j))
@@ -182,7 +182,7 @@ export function useJobManagement(options: UseJobManagementOptions = {}): UseJobM
 
   const cancelJob = useCallback(async (jobId: string): Promise<void> => {
     try {
-      await videoTranslationService.cancelJob(jobId)
+      await videoTranslationService.cancelJob()
       
       // Update job status in the list
       setJobs(prev => prev.map(job => 

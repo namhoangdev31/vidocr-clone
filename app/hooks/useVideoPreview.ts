@@ -23,7 +23,7 @@ export function useVideoPreview(): UseVideoPreviewReturn {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await videoTranslationService.generateVideoPreview(request)
+      const response = await videoTranslationService.generateVideoPreview()
       setPreviewUrl(response.previewUrl)
       setPreviewInfo(response)
       return response

@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react'
-import { videoTranslationService, AIModel, CostEstimateResponse } from '@/app/lib/api/videoTranslationService'
+import {
+  videoTranslationService,
+  AIModel,
+  CostEstimateResponse,
+} from '@/app/lib/api/videoTranslationService'
 
 export interface UseAIModelsOptions {
   autoFetch?: boolean
@@ -19,13 +23,18 @@ export interface UseAIModelsReturn {
     minQuality?: number
     requiredFeatures?: string[]
   }) => Promise<void>
-  estimateCost: (modelId: string, tokens: number) => Promise<CostEstimateResponse | null>
+  estimateCost: (params: { modelId: string; tokens: number }) => Promise<CostEstimateResponse | null>
   isEstimating: boolean
 }
 
 export function useAIModels(options: UseAIModelsOptions = {}): UseAIModelsReturn {
-  const { autoFetch = true, maxCost, minQuality, requiredFeatures } = options
-  
+  const {
+    autoFetch = true,
+    maxCost,
+    minQuality,
+    requiredFeatures,
+  } = options
+
   const [models, setModels] = useState<AIModel[]>([])
   const [recommendedModels, setRecommendedModels] = useState<AIModel[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -62,11 +71,17 @@ export function useAIModels(options: UseAIModelsOptions = {}): UseAIModelsReturn
     }
   }
 
-  const estimateCost = async (modelId: string, tokens: number): Promise<CostEstimateResponse | null> => {
+  const estimateCost = async ({
+    modelId,
+    tokens,
+  }: {
+    modelId: string
+    tokens: number
+  }): Promise<CostEstimateResponse | null> => {
     try {
       setIsEstimating(true)
       setError(null)
-      const response = await videoTranslationService.estimateCost(modelId, tokens)
+      const response = await videoTranslationService.estimateCost()
       return response
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to estimate cost')
@@ -79,10 +94,15 @@ export function useAIModels(options: UseAIModelsOptions = {}): UseAIModelsReturn
   useEffect(() => {
     if (autoFetch) {
       fetchModels()
-      if (maxCost || minQuality || requiredFeatures) {
+      if (
+        maxCost !== undefined ||
+        minQuality !== undefined ||
+        requiredFeatures !== undefined
+      ) {
         fetchRecommended({ maxCost, minQuality, requiredFeatures })
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFetch, maxCost, minQuality, requiredFeatures])
 
   return {
@@ -93,6 +113,6 @@ export function useAIModels(options: UseAIModelsOptions = {}): UseAIModelsReturn
     fetchModels,
     fetchRecommended,
     estimateCost,
-    isEstimating
+    isEstimating,
   }
 }
