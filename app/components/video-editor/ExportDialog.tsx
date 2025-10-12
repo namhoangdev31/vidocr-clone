@@ -25,9 +25,12 @@ export function ExportDialog({
   isRendering,
   progress,
   statusText,
+  progressDetails,
   onCancelRender,
   outputUrl,
+  tempUrl,
   onDownloadOutput,
+  onDownloadTemp,
 }: {
   open: boolean
   onClose: () => void
@@ -40,9 +43,12 @@ export function ExportDialog({
   isRendering?: boolean
   progress?: number
   statusText?: string
+  progressDetails?: { label: string; percent: number }[]
   onCancelRender?: () => void
   outputUrl?: string | null
+  tempUrl?: string | null
   onDownloadOutput?: () => void
+  onDownloadTemp?: () => void
 }) {
   const defaultTitle = useMemo(() => {
     if (!video?.name) return 'export.mp4'
@@ -183,28 +189,35 @@ export function ExportDialog({
               </select>
             </label>
 
-            {/* Suggestions */}
-            <div className="sm:col-span-2 mt-2 grid grid-cols-1 gap-3">
-              <div className="text-xs text-slate-400">Đề xuất tiêu đề:</div>
-              <div className="text-sm text-slate-300 line-clamp-2">
-                Sương Khói Mờ Ảo Trong Biệt Thự: Hành Trình Khám Phá Nghệ Thuật
-              </div>
-              <div className="text-xs text-slate-400">Đề xuất nội dung:</div>
-              <div className="text-sm text-slate-400">
-                Video này đưa bạn vào một không gian bí ẩn và tuyệt đẹp, nơi sương khói mờ ảo che khuất thế ngoại tình...
-              </div>
-            </div>
+            {/* Suggestions removed */}
           </div>
         </div>
 
         {/* Progress area */}
         {isRendering && (
           <div className="px-6">
-            <div className="mb-2 text-sm text-slate-300">Đang xuất video… {Math.round((progress ?? 0) * 100)}%</div>
-            <div className="h-2 w-full bg-slate-800 rounded overflow-hidden">
-              <div className="h-full bg-sky-500" style={{ width: `${Math.round((progress ?? 0) * 100)}%` }} />
-            </div>
-            {statusText && <div className="mt-2 text-xs text-slate-400">{statusText}</div>}
+            {(() => {
+              const isTranscoding = /chuyển định dạng/i.test(statusText || '')
+              if (isTranscoding) {
+                return (
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="h-4 w-4 rounded-full border-2 border-slate-600 border-t-sky-500 animate-spin" aria-hidden />
+                    <div className="text-sm text-slate-300">{statusText || 'Đang chuyển định dạng…'}</div>
+                  </div>
+                )
+              }
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2 text-sm text-slate-300">
+                    <div className="truncate mr-3">{statusText || 'Kết xuất khung hình'}</div>
+                    <div className="tabular-nums text-slate-400">{Math.round((progress ?? 0) * 100)}%</div>
+                  </div>
+                  <div className="h-2 w-full bg-slate-800 rounded overflow-hidden">
+                    <div className="h-full bg-sky-500 transition-[width] duration-200" style={{ width: `${Math.round((progress ?? 0) * 100)}%` }} />
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
 
@@ -241,6 +254,15 @@ export function ExportDialog({
                   className="rounded-md bg-emerald-700 hover:bg-emerald-600 text-white text-sm px-3 py-1.5"
                 >
                   Tải video
+                </button>
+              )}
+              {isRendering && tempUrl && (
+                <button
+                  type="button"
+                  onClick={onDownloadTemp}
+                  className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1.5"
+                >
+                  Tải bản tạm (WebM)
                 </button>
               )}
               <button
