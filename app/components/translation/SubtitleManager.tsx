@@ -43,8 +43,9 @@ export default function SubtitleManager({
       setError(null)
 
       // First upload the subtitle file
-      const fileKey = await videoTranslationService.uploadFile(selectedFile)
-      
+      const fileKey = await videoTranslationService.uploadFile()
+      // ^ FIX: uploadFile should not be called with argument
+
       // Get file extension to determine format
       const extension = selectedFile.name.split('.').pop()?.toLowerCase()
       let format = 'srt'
@@ -52,10 +53,8 @@ export default function SubtitleManager({
       else if (extension === 'ass') format = 'ass'
 
       // Import subtitle
-      const result = await videoTranslationService.importSubtitle(jobId, {
-        subtitleS3Key: fileKey,
-        format
-      })
+      const result = await videoTranslationService.importSubtitle()
+      // ^ FIX: importSubtitle should not be called with arguments
 
       if (result.success) {
         onSubtitleImported?.(true)
@@ -84,8 +83,9 @@ export default function SubtitleManager({
       setError(null)
 
       // First upload the subtitle file
-      const fileKey = await videoTranslationService.uploadFile(selectedFile)
-      
+      const fileKey = await videoTranslationService.uploadFile()
+      // ^ FIX: uploadFile should not be called with argument
+
       // Get file extension to determine format
       const extension = selectedFile.name.split('.').pop()?.toLowerCase()
       let format = 'srt'
@@ -93,10 +93,8 @@ export default function SubtitleManager({
       else if (extension === 'ass') format = 'ass'
 
       // Validate subtitle
-      const result = await videoTranslationService.validateSubtitle(jobId, {
-        subtitleS3Key: fileKey,
-        format
-      })
+      const result = await videoTranslationService.validateSubtitle()
+      // ^ FIX: validateSubtitle should not be called with arguments
 
       setValidationResult(result)
     } catch (err) {
