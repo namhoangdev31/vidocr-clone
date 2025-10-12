@@ -835,7 +835,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
         await video.play().catch(() => {})
         console.log('[renderWithRecorder] recorder.start')
         recorder.start(250)
-        onStatus('Đang ghi video (fallback)…')
+        onStatus('Đang xuất video…')
         if (rVFC) rVFC(drawFrame)
         else requestAnimationFrame(() => drawFrame())
       }
