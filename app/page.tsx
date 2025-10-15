@@ -9,7 +9,7 @@ import TestAPI from "./components/TestAPI";
 import ProgressPage from "./components/ProgressPage";
 import { AffiliateDashboard } from "./components/affiliate";
 import UserSettings from "./components/UserSettings";
-// Progress detail có route riêng: /progress/[id]
+import DubbingPage from "./dubbing/page";
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState("create");
@@ -20,6 +20,8 @@ export default function Page() {
         return <ExportPage />;
       case "create":
         return <CreatePage />;
+      case "dubbing":
+        return <DubbingPage />;
       case "progress":
         return <ProgressPage />;
       case "test":

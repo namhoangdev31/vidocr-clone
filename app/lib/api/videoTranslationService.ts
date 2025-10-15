@@ -391,11 +391,52 @@ class VideoTranslationService {
 
   // Multi-Speaker TTS API Methods
   async getVoiceProfiles(): Promise<VoiceProfilesResponse> {
-    throw new Error('Endpoint /v1/multi-speaker-tts/voice-profiles is not available. See api-inventory.md')
+    const response = await fetch(`${this.baseUrl}/videos/nts/tts/voices`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+    return this.handleResponse<VoiceProfilesResponse>(response)
   }
 
-  async generateMultiSpeakerTTS(): Promise<{ success: boolean; audioKey?: string }> {
-    throw new Error('Endpoint /v1/multi-speaker-tts/generate is not available. See api-inventory.md')
+  async generateMultiSpeakerTTS(request: MultiSpeakerTTSRequest): Promise<{ success: boolean; audioKey?: string }> {
+    const response = await fetch(`${this.baseUrl}/videos/nts/tts/create`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        text: request.segments.map(s => s.text).join(' '),
+        gender: request.segments[0]?.speakerId || 'tts_clone_vn_nu4',
+        language: 'vi',
+        delay_xuong_dong: 0.39,
+        delay_dau_cham: 0.3,
+        delay_dau_phay: 0.186,
+        volume: 100,
+        speed: 100,
+        pitch: 100
+      })
+    })
+    
+    const result = await this.handleResponse<any>(response)
+    
+    if (result.status === 'success') {
+      return {
+        success: true,
+        audioKey: result.data.reqId
+      }
+    }
+    
+    return { success: false }
+  }
+
+  async checkTTSTask(reqId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/videos/nts/tts/check/${reqId}`, {
+      method: 'GET',
+      headers: this.getHeaders()
+    })
+    return this.handleResponse<any>(response)
+  }
+
+  async downloadTTSAudio(reqId: string): Promise<string> {
+    return `${this.baseUrl}/videos/nts/tts/audio/${reqId}.wav`
   }
 
   // Glossary API Methods
