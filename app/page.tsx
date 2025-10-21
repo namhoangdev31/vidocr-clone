@@ -10,6 +10,7 @@ import ProgressPage from "./components/ProgressPage";
 import { AffiliateDashboard } from "./components/affiliate";
 import UserSettings from "./components/UserSettings";
 import DubbingPage from "./dubbing/page";
+import { SubtitlePanel } from "./components/subtitle";
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState("create");
@@ -28,8 +29,10 @@ export default function Page() {
         return <TestAPI />;
       case "affiliate":
         return <AffiliateDashboard />;
-        case "user" : 
-        return <UserSettings />
+      case "user":
+        return <UserSettings />;
+      case "subtitle":
+        return <SubtitlePanel />;
       default:
         return <CreatePage />;
     }
