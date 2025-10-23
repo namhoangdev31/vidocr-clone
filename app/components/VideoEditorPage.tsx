@@ -11,6 +11,7 @@ import {
   TranscriptEntry,
   VideoSource,
 } from './video-editor/types'
+import { ExportSettings, ExportDialog } from './video-editor/ExportDialog'
 import { apiClient } from '@/app/lib/api'
 import { API_BASE_URL } from '@/app/lib/config/environment'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
@@ -301,7 +302,7 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
     setObjectUrl(null)
     setVideoSource(null)
     setTimelineDuration(60)
-    resetTracks()
+    setTracks(cloneDefaultTracks())
     setHasAutoApplied(false)
   }
 
