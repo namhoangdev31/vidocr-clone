@@ -15,7 +15,8 @@ import { apiClient } from '@/app/lib/api'
 import { API_BASE_URL } from '@/app/lib/config/environment'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util'
-import { ExportDialog, ExportSettings } from './video-editor/ExportDialog'
+import { useEditorState } from '@/app/hooks/useEditorState'
+import { VideoEditorState } from './video-editor/types'
 
 const DEFAULT_TRANSCRIPTS: TranscriptEntry[] = []
 
@@ -143,6 +144,13 @@ type VideoEditorPageProps = {
 
 export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   console.log('VideoEditorPage rendered with jobId:', jobId)
+  
+  // For testing: use a hardcoded jobId if none provided
+  const testJobId = jobId || 'af696f2f4413f60f8d31c8b8ec6a8675564f71dd7a03e2844a75bbe2c7c0f9ff'
+  
+  // Initialize editor state management
+  const { saveState, loadState, isLoading: isStateLoading, error: stateError } = useEditorState(testJobId)
+  
   const [videoSource, setVideoSource] = useState<VideoSource | null>(null)
   const [timelineDuration, setTimelineDuration] = useState(60)
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
@@ -169,15 +177,47 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
   const [tempRenderUrl, setTempRenderUrl] = useState<string | null>(null)
   const renderAbortRef = useRef<{ abort: () => void } | null>(null)
 
+  // Auto-save editor state when tracks change (debounced)
+  useEffect(() => {
+    if (!testJobId || tracks.length === 0) return
+    
+    const timeoutId = setTimeout(() => {
+      const editorState: VideoEditorState = {
+        tracks,
+        // Add frame and logo settings later when implemented
+        frameSettings: undefined,
+        logoSettings: undefined,
+        audioLayers: undefined,
+      }
+      
+      saveState(editorState).catch((err) => {
+        console.warn('Failed to auto-save editor state:', err)
+      })
+    }, 2000) // 2 second debounce
+    
+    return () => clearTimeout(timeoutId)
+  }, [tracks, testJobId, saveState])
+  
+  // Load editor state on mount
+  useEffect(() => {
+    if (!testJobId) return
+    
+    loadState().then((state) => {
+      if (state && state.tracks) {
+        console.log('Loaded editor state:', state)
+        setTracks(state.tracks)
+        // Apply other state properties as they're implemented
+      }
+    }).catch((err) => {
+      console.warn('Failed to load editor state:', err)
+    })
+  }, [testJobId, loadState])
+
   useEffect(() => {
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [objectUrl])
-
-  const resetTracks = useCallback(() => {
-    setTracks(cloneDefaultTracks())
-  }, [])
 
   const toolbarItems: ToolbarItem[] = useMemo(
     () => [
@@ -186,7 +226,6 @@ export default function VideoEditorPage({ jobId }: VideoEditorPageProps) {
       { id: 'text', icon: <Type className="w-5 h-5" />, label: 'Text' },
       { id: 'effects', icon: <Sparkles className="w-5 h-5" />, label: 'Effects' },
       { id: 'trim', icon: <Scissors className="w-5 h-5" />, label: 'Cut' },
-      { id: 'templates', icon: <Shapes className="w-5 h-5" />, label: 'Templates' },
       { id: 'launch', icon: <Rocket className="w-5 h-5" />, label: 'Export' },
     ],
     [],

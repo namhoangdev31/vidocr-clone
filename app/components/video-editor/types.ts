@@ -45,6 +45,15 @@ export type TimelineThumbnail = {
   duration: number
 }
 
+export type AudioLayer = {
+  id: string;
+  trackId: string;
+  label: string;
+  volume: number; // 0-1
+  muted: boolean;
+  items: TimelineItem[];
+}
+
 export type TimelineTrack = {
   id: string
   label: string
@@ -55,6 +64,7 @@ export type TimelineTrack = {
   thumbnails?: TimelineThumbnail[]
   assetSrc?: string
   fps?: number
+  audioLayers?: AudioLayer[]; // For multi-track audio
 }
 
 export type TranscriptEntry = {
@@ -63,6 +73,28 @@ export type TranscriptEntry = {
   end: number
   primaryText: string
   secondaryText?: string
+}
+
+export type FrameSettings = {
+  enabled: boolean;
+  style: 'border' | 'rounded' | 'shadow';
+  color: string;
+  width: number;
+}
+
+export type LogoSettings = {
+  enabled: boolean;
+  url: string;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  size: number;
+  opacity: number;
+}
+
+export type VideoEditorState = {
+  tracks: TimelineTrack[];
+  frameSettings?: FrameSettings;
+  logoSettings?: LogoSettings;
+  audioLayers?: AudioLayer[];
 }
 
 export type VideoEditorProps = {
